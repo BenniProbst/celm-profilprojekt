@@ -7,9 +7,12 @@ variables:
 
 build-latex:
   stage: build
-  image: texlive/texlive:latest
+  image:
+    name: danteev/texlive:latest
+    pull_policy: if-not-present
   tags:
     - docker
+  timeout: 20m
   script:
     - pdflatex -interaction=nonstopmode doku.tex || true
     - bibtex doku || true
