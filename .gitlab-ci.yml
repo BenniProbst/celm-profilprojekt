@@ -1,0 +1,48 @@
+stages:
+  - build
+  - deploy-pdf
+
+variables:
+  GIT_DEPTH: 0
+
+build-latex:
+  stage: build
+  image: texlive/texlive:latest
+  tags:
+    - docker
+  script:
+    - pdflatex -interaction=nonstopmode doku.tex || true
+    - bibtex doku || true
+    - pdflatex -interaction=nonstopmode doku.tex
+    - pdflatex -interaction=nonstopmode doku.tex
+  artifacts:
+    paths:
+      - doku.pdf
+    expire_in: 30 days
+  rules:
+    - if: '$CI_COMMIT_MESSAGE =~ /\[skip ci\]/'
+      when: never
+    - if: '$CI_PIPELINE_SOURCE == "push"'
+
+commit-pdf:
+  stage: deploy-pdf
+  image: alpine:latest
+  tags:
+    - docker
+  needs:
+    - job: build-latex
+      artifacts: true
+  before_script:
+    - apk add --no-cache git
+  script:
+    - git config user.name "CI Bot"
+    - git config user.email "ci@comdare.de"
+    - git remote set-url origin "https://gitlab-ci-token:${CI_JOB_TOKEN}@gitlab.comdare.de/${CI_PROJECT_PATH}.git"
+    - git fetch origin $CI_COMMIT_BRANCH
+    - git checkout $CI_COMMIT_BRANCH
+    - git add doku.pdf
+    - 'git diff --cached --quiet && echo "No PDF changes, skipping commit" || (git commit -m "CI: Update compiled doku.pdf [skip ci]" && git push origin $CI_COMMIT_BRANCH)'
+  rules:
+    - if: '$CI_COMMIT_MESSAGE =~ /\[skip ci\]/'
+      when: never
+    - if: '$CI_PIPELINE_SOURCE == "push"'

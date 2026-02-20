@@ -1,0 +1,98 @@
+Eigentokens & RedcomponentDB — 30-minute interim talk (speaker cheat sheet)
+Date: 2026-01-08
+Goal: Explain why grammar-aware storage enables (1) stronger deduplication, (2) auditable/deterministic model compilation, and (3) a measurable benchmark loop.
+Key message (one sentence): We treat storage as the 'compiler front-end' that learns a cross-object grammar; the same grammar becomes a deterministic substrate to compile and continuously improve domain LLM artifacts.
+
+Slide-by-slide outline (DE):
+
+[0:00–1:00] Slide 1: Title – Eigentokens & RedcomponentDB
+- Kontext: Profilprojekt Anwendungsforschung (INF-PM-FPA), TU Dresden / ScaDS.AI.
+- Ein Satz: 'Grammar-aware storage → deterministic compilation + benchmark loop'.
+- Kurz: Was neu ist seit letzter Zwischenfolie (RedcomponentDB-Implementierung + Phasen/Contracts).
+
+[1:00–2:00] Slide 2: Agenda
+- Roadmap der nächsten 30 Minuten: Modell → Chunking → DB → Phasen → Compile → Evaluation.
+- Erwartungsmanagement: heute Zwischenstand, Fokus auf Architektur/Contracts, nicht auf endgültige Zahlen.
+
+[2:00–4:00] Slide 3: Motivation: from opaque training to auditable compilation
+- Problem: Training ist teuer/opaqu; Updates/Debugging schwierig.
+- These:: Wenn wir Wissen als explizite Regeln speichern (Grammatik), ist es auditierbar.
+- Brücke: Redundanz in Daten ist 'Signal' für wiederverwendbare Struktur.
+
+[4:00–6:00] Slide 4: Contributions / what’s new
+- 4 Contributions kurz durchgehen: (1) Grammar-aware kernel, (2) token store + artifacts, (3) six-phase contract, (4) compiler path.
+- Klarstellen: 'Deterministisch' bedeutet reproduzierbare Artefakte, nicht perfekte Antworten.
+
+[6:00–8:00] Slide 5: Eigentoken model (⟨id,P,D,R⟩)
+- Eigentoken = Daten + Interpretation + Referenzen.
+- id = content hash (SHA-512) → content-addressable + dedupe.
+- Beispiel 'Apfelbaum' zeigt Komposition und Wiederverwendung.
+
+[8:00–10:00] Slide 6: Grammar induction → “grammar chunks”
+- Induktionspipeline: seeding → pattern discovery → rule formation → cookbook.
+- Wichtig: cross-object (über Dateien/Objekte hinweg) statt nur within-file.
+- Nebenprodukt: Range maps / seekable Rekonstruktion.
+
+[10:00–12:00] Slide 7: NEW: Chunking strategies (Fixed vs CDC vs Grammar)
+- Drei Ebenen von 'Chunking': Fixed blocks (simpel) → CDC/FastCDC (shift robust) → Grammar chunks (strukturbasiert).
+- Kernargument: Grammatik kann Sequenzen zusammenfassen, die nicht bit-identisch in gleichen Grenzen sind.
+- Trade-off: Mehr Analyse/Metadaten vs weniger Platz.
+
+[12:00–14:00] Slide 8: NEW: Practical grammar chunking pipeline
+- Praktische Pipeline erklären: CDC seed → similarity search → rule mining → rule promotion → range map refresh.
+- Heuristiken: stability under edits, locality, rollback-safe.
+- Ergebnis: cookbook bleibt stabil, Referenzen ändern sich kontrolliert.
+
+[14:00–16:00] Slide 9: RedcomponentDB: storage engine structure
+- RedcomponentDB als 'token store + indices + artifacts'.
+- Module: index/DAG, durability, access path.
+- Path expansion: tools/products Schema, hash-indexed stores.
+
+[16:00–17:30] Slide 10: Storage & access semantics (Range reads)
+- Warum HTTP Range wichtig ist: partial read ohne full decompress.
+- Mechanismus: logical range → token spans → VM reconstruct.
+- Abgrenzung: nicht klassisches Chunk-Store; es ist grammar-native.
+
+[17:30–19:00] Slide 11: Execution & validation (6-phase contract)
+- 6-Phasen-Contract: P0 bootstrap, P1 toolchain, P2 build, P3 interpreter/plugins, P4 accelerators, P5 benchmarking.
+- Modes direct/managed/server: 'done' ist mode-spezifisch.
+- Ziel: reproduzierbare Marker/Reports pro Run.
+
+[19:00–21:00] Slide 12: NEW: Phase contract details + run/report layout
+- status.json minimal fields: phase, mode, run_id, signals, digest.
+- Canonical run layout zeigen (wo Logs/Reports liegen).
+- Warum das für 'compile' entscheidend ist: artifacts versionierbar, compare_benchmark möglich.
+
+[21:00–23:00] Slide 13: LLM compiler (ELM/CELM): grammar cookbook as input
+- Compiler-Input: cookbook + constraints + target domain.
+- Output: deterministische Modell-Artefakte (ELM/CELM) + optionale trainierbare Layer.
+- Betonung: erst Domain-LLMs, nicht allgemeines ChatGPT.
+
+[23:00–25:00] Slide 14: NEW: Compilation pipeline (grammar → model artifacts)
+- Flow: corpus → grammar → token DB → compile → artifacts store.
+- Determinismus: gleiche Inputs → identische Artefakte; Hashes/Manifeste sichern.
+- Optional: LoRA/QLoRA als 'delta artifacts' (wenn Training sinnvoll).
+
+[25:00–26:30] Slide 15: NEW: Benchmark & compare_benchmark promotion loop
+- compare_benchmark: kompatible Targets finden (compatibilityCheck).
+- Benchmark profile schema: Funktionen/Metriken/Thresholds.
+- Promotion loop: build candidate → run → compare → update AM DB → decide promote.
+
+[26:30–28:00] Slide 16: Evaluation plan
+- Datasets (code/logs/text/binary), Baselines (FastCDC+zstd etc.).
+- Metrics: dedup ratio, write amplification, latency percentiles, determinism.
+- Fokus: messbare Claims + Reproduzierbarkeit.
+
+[28:00–29:00] Slide 17: Current status (what’s done vs next)
+- Was bereits steht: docs/contracts, run layout, templating baseline.
+- Größte Lücke: BuildUtilities C++ interpreter + plugin pipeline.
+- Was als nächstes implementiert wird (Phase 3 zuerst).
+
+[29:00–29:40] Slide 18: Risks & mitigations
+- Risiken: Induktionskosten, Metadaten, Sicherheit/VM.
+- Mitigation: Heuristics, fallbacks, sandboxing, gating.
+
+[29:40–30:00] Slide 19: Next milestones + ask for feedback
+- Nächste Milestones (P3 → P4 → P5).
+- Bitte um Feedback: Chunking-Heuristiken, Compile-Abgrenzung, Eval-Setup.
+- Q&A.

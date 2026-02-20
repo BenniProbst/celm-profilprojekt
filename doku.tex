@@ -1,0 +1,322 @@
+\documentclass[beleg,zihtitle,american,final,hyperref,utf8,open=any,oneside]{zihpub}
+
+% Libraries
+\usepackage{setspace}
+\usepackage{booktabs} % for \toprule, \midrule, \bottomrule, \cmidrule
+\usepackage{pgfplots}
+\usepackage{enumitem}
+\pgfplotsset{compat=1.18}
+\usepackage{siunitx}
+\sisetup{
+  per-mode = symbol,
+  group-minimum-digits = 4,
+  detect-mode,
+  detect-weight,
+  detect-family
+}
+\usepgfplotslibrary{groupplots,statistics,fillbetween,dateplot}
+\newcommand{\BibLaTeX}{\textsc{Bib}\LaTeX}
+
+\author{Benjamin-Elias Probst}
+\title{Eigentokens: Grammar-Aware Inline Deduplication and Deterministic Compilation for Large Language Models}
+\bibfiles{doku}
+
+\birthday{11. April 1996}
+\placeofbirth{Potsdam}
+\matno{4510512}
+
+\betreuer{Prof. Dr. Michael Färber}
+
+\begin{document}
+
+\let\cleardoublepage\clearpage
+\selectlanguage{american} % ensure US English is active
+
+% ---------------------------------------------------------
+% ZOPP structure (headings only; content to be added later)
+% ---------------------------------------------------------
+
+% (Optional) Abstract
+\chapter*{Abstract}
+% Brief, 5–8 sentences: problem, objective, approach, key results, impact.
+% \addcontentsline{toc}{chapter}{Abstract} % uncomment if you want it in the ToC
+This report presents \textbf{Eigentokens}, a novel storage architecture that fundamentally reconceptualizes how Large Language Models (LLMs) are constructed and stored. Unlike contemporary probabilistic approaches that encode knowledge in opaque neural weights, Eigentokens introduce a deterministic, grammar-based compilation paradigm where storage operations and model construction are unified through explicit grammatical productions. The system operates on two integrated levels: (1) as a storage kernel providing grammar-aware inline deduplication with byte-level grammatical productions mapped into a non-strict B\textsuperscript{+}-forest index (SHA512 content-addressable), achieving superior compression ratios while maintaining seekable access via HTTP Range requests (RFC 9110\cite{Fielding2022}); and (2) as a deterministic compiler for language models, where grammatical rules extracted from data directly determine neural network weights without any probabilistic training. Each \emph{Eigentoken} is treated as a binary description language with an associated interpretation program, data payload, and references to other tokens, enabling hierarchical composition of knowledge. Through recursive grammar induction (with worst-case $O(n^3)$ complexity) and cross-object pattern learning, the system builds an extensible ``grammar cookbook'' of reusable rules that remain stable under edits. 
+
+Empirical goals for this C++ prototype include achieving \textbf{25--40\% higher deduplication effectiveness} than state-of-the-art content-defined chunking (CDC) methods---in particular Fast content-defined chunking (FastCDC)---on realistic datasets; maintaining \textbf{95th percentile (P95) read latencies within +15\%} relative to an uncompressed storage baseline; and realizing \textbf{30\% lower write amplification} compared to Log-Structured Merge-tree (LSM-tree) based storage systems \cite{ONeil1996}. The ultimate vision is an \emph{omni large language model (omni-LLM)}: a universal model constructed through modular grammar execution rather than neural sampling, enabling complete determinism and traceability. Because output quality is bounded by input data quality, errors would propagate deterministically, but remain fully traceable and correctable. This report details the objectives, technical foundations, architecture, implementation, and planned evaluation of the Eigentokens system, and discusses expected results, limitations, and future outlook.
+
+\chapter*{Project Context and Assignment}
+% \addcontentsline{toc}{chapter}{Project Context and Assignment} % uncomment if desired
+
+\noindent \textbf{Institution:} Faculty of Computer Science, Institute of Systems Architecture, Chair of Scalable Software Architectures for Data Analytics, Technische Universit\"at Dresden.
+
+\noindent \textbf{Degree program:} Diploma in Computer Science (Pr\"ufungsordnung (PO) 2010).
+
+\noindent \textbf{Module:} INF-PM-FPA Profilprojekt Anwendungsforschung in der Informatik.
+
+\noindent \textbf{Work period:} 28.10.2025 -- 10.02.2026 (15 weeks).
+
+\noindent \textbf{Supervision and reviewers:}
+\begin{itemize}
+  \item Supervising professor and supervisor: Prof. Dr. Michael F\"arber
+  \item First reviewer: Prof. Dr. Michael F\"arber
+  \item Second reviewer: n.\,n.
+\end{itemize}
+
+\noindent \textbf{Topic (condensed):} Eigentokens: grammar-aware inline deduplication and a deterministic compilation language for Eigentoken Language Model (ELM) / CELM-lang (CELM) artifacts, using a Secure Hash Algorithm 512-bit (SHA-512) indexed non-strict B\textsuperscript{+}-forest layout and an S3/key-value (KV) facade with Hypertext Transfer Protocol (HTTP) Range semantics (Request for Comments (RFC) 9110) \cite{Fielding2022}.
+
+\noindent \textbf{Non-goals:} Natural Language Processing (NLP) tokenization and probabilistic inference/sampling are out of scope for the initial prototype.
+
+\section*{Work Packages (Merged)}
+\begin{itemize}
+  \item \textbf{Requirements and scope:} use-cases, Service Level Objectives (SLOs), terminology; explicit non-goals; evaluation plan.
+  \item \textbf{Architecture and specification:} Eigentoken tuple $\langle \mathit{id}, P, D, R \rangle$, grammar induction algorithm, non-strict B\textsuperscript{+}-forest with SHA-512, token/block mapping, RFC-9110 compliant Range mapping.
+  \item \textbf{Core implementation (C++):} Grammar Induction Engine (A1), B\textsuperscript{+}-Forest Index (A2), Asynchronous Processing Pipeline (A3), S3/KV Interface (A4), Analysis and Control Application Programming Interface (API) (A5), Mock Rules and Testing Suite (A6).
+  \item \textbf{CELM-lang integration:} M2-level meta-language for interpretation programs, pattern generators, match conditions, dynamic runtime extension; foundations for M3-level self-improvement routines.
+  \item \textbf{Range path and optimization:} token-aligned block maps, heuristics for hot ranges, asynchronous consolidation.
+  \item \textbf{Benchmarks and evaluation (incl. ablations):} datasets (code, text/logs, binary, and columnar formats), baselines, metrics (space, ingest, write/deletion amplification, percentiles P50/P95/P99), robustness under shift/insert/rename transformations.
+  \item \textbf{Artifacts and reproducibility:} Command Line Interface (CLI), scripts, reproducible plots, report (\textasciitilde 20 pages), slide deck; scientific documentation and a colloquium presentation.
+  \item \textbf{Roadmap (optional):} replication/erasure coding on grammar leaves; sketch the ELM/CELM compilation path for deterministic model generation.
+\end{itemize}
+
+\section*{Deliverables and Colloquium}
+Submission includes: C++ prototype with CLI, benchmark scripts (and datasets/links), reproducible evaluations (plots), report (Portable Document Format (PDF)), and slide deck (PDF). The project concludes with a colloquium featuring a 60-minute talk and serves as preparation for the diploma thesis.
+
+
+\chapter{Introduction and Motivation}
+Current large language models (LLMs) such as GPT-5 and Google Gemini are built on probabilistic neural architectures with billions of learned parameters. While powerful, these monolithic models have fundamental limitations: they act as opaque black boxes with no explicit declarative knowledge representation, are prone to hallucination, difficult to update with new information, and nearly impossible to debug or formally verify. When a model produces an incorrect statement, there is no straightforward way to trace that output back to a specific training datum or rule; correcting such errors often requires costly retraining on updated data. This lack of transparency and determinism in conventional LLMs poses a critical barrier for high-stakes applications that require explainability and reliability.
+
+\textbf{Deterministic Compilation of Large Language Models (LLMs):} Eigentokens propose a paradigm shift by treating language model construction as a \emph{compilation} problem rather than a probabilistic training problem. Instead of implicitly encoding knowledge in floating-point weights through gradient descent, the Eigentokens approach explicitly encodes knowledge as \emph{grammatical production rules} extracted from a corpus. In essence, the system learns a formal grammar that describes the content of the data, and uses this grammar as a blueprint to compile deterministic neural network components. The storage layer and the model-building process are unified: storing data triggers grammar induction, and these learned grammar rules directly inform the structure and weights of a neural model (an Eigentoken Language Model (ELM)). This approach aims to provide:
+\begin{itemize}
+  \item \textbf{Complete traceability:} Every component of a generated model (e.g., a weight or connection) can be traced back to specific source data patterns or rules that produced it.
+  \item \textbf{Incremental and modular updates:} New knowledge can be integrated by adding or updating grammar rules (i.e., new tokens or productions) without retraining from scratch, enabling fast updates and fine-grained model editing.
+  \item \textbf{Interpretability and debuggability:} The model's behavior is governed by human-readable rules (a ``grammar cookbook'') rather than inscrutable weights, making it possible to inspect, reason about, and verify the model's knowledge base.
+  \item \textbf{Storage efficiency:} By leveraging grammar-based deduplication at the storage level, the system achieves significant data compression and deduplication improvements (targeting 25--40\% better deduplication versus content-defined chunking (CDC) methods) while preserving fast random access to data.
+\end{itemize}
+
+
+\noindent \textbf{Storage as AI Infrastructure:} A key insight motivating this work is that effective storage deduplication is inherently linked to recognizing structure in the data—the very same structures that a language model could use to compose knowledge. Modern data lakes and versioned datasets exhibit enormous redundancy (e.g., repetitive code snippets, recurring log patterns, overlapping image regions). Traditional storage systems either sacrifice deduplication granularity for performance or vice versa. Eigentokens unify storage and model compilation: the storage engine performs \emph{grammar induction} to deduplicate data, and those grammars become the building blocks of an LLM. In doing so, the storage system essentially doubles as the learning system, turning data redundancy into an asset for model construction. This is analogous to moving from low-level assembly (raw bytes) to higher-level languages (structured grammar) in software development—here, applying that evolution to AI model building.
+
+\chapter{Related Work and Background}
+\section{Content-Defined Chunking and Deduplication}
+Our approach builds on a rich history of \textbf{content-defined chunking (CDC)} and deduplication techniques in storage systems. Classic systems like LBFS (Low-Bandwidth Filesystem) introduced CDC using rolling hash breakpoints to identify duplicate regions across file versions \cite{Muthitacharoen2001}. Modern variants such as FastCDC improve throughput (processing data at gigabytes per second) and produce more stable chunk boundaries by using smarter hash triggering mechanisms \cite{Xia2016}. These CDC methods can eliminate 20--30\% of redundant data on typical workloads, but they treat the data as an undifferentiated byte stream and lack any semantic or cross-object awareness. They also face a trade-off: smaller chunks improve deduplication but can bloat metadata and harm throughput, whereas larger chunks miss finer redundancies.
+
+Eigentokens extend CDC by introducing \textbf{dynamic, grammar-aware chunk boundaries}. Instead of fixed-size or purely hash-based chunk splits, the grammar induction engine identifies variable-length patterns (from a few bytes to entire subdocuments) that can be abstracted as tokens. This approach is related to \textbf{grammar-based compression} techniques like \emph{Sequitur}\cite{NevillManning1997} and \emph{Re-Pair}, which form a context-free grammar by repeatedly replacing repeated substrings with nonterminal symbols. Those algorithms achieve excellent compression on single files by capturing hierarchical structure. However, traditional grammar compressors operate offline on individual sequences and are not designed for large-scale, cross-object scenarios or real-time storage systems. In contrast, Eigentokens performs online grammar induction across an entire corpus (cross-file), and integrates this with a persistent storage index and query interface.
+
+Another line of relevant work is \textbf{self-indexed storage and compressed data structures} (e.g., using Straight-Line Programs and self-indexes) which allow queries on compressed data. These demonstrate that it is possible to operate directly on compressed representations. Eigentokens adopt a similar philosophy by making the grammar itself the index: data is stored in compressed form (via grammar rules), yet remains queryable via content hashes and references.
+
+A closely related prior system is \textbf{UltiHash}, an earlier grammar-aware deduplication prototype by the same research group. UltiHash could detect repeated structures across a codebase (it successfully deduplicated 380k lines of code in a self-hosting experiment) and even scaled to industrial datasets (1 PB of video at Bosch). However, UltiHash was limited to storage deduplication; it did not incorporate deterministic model compilation. Eigentokens build upon UltiHash's storage optimizations and goes further by making the grammar the centerpiece of an LLM construction pipeline. In summary, no existing system combines:
+\begin{itemize}
+\item \textit{Cross-object grammar induction} at scale (with $O(n^3)$ learning complexity heuristically tamed for practicality),
+\item \textit{A B\textsuperscript{+}-forest index} optimized for grammatical and content-addressable access patterns,
+\item \textit{Deterministic neural model compilation} directly from stored patterns,
+\item and an \textit{agentic AI capability} where the storage system can self-improve by analyzing its own knowledge base.
+\end{itemize}
+This unique combination defines the research gap that Eigentokens aim to fill.
+
+\chapter{Technical Foundation}
+This section introduces the core concepts and formalisms underlying the Eigentokens architecture: the structure of an Eigentoken, the grammar induction process, the SHA512-indexed B\textsuperscript{+}-forest storage structure, and the \textit{CELM-lang} meta-language used for interpretation programs.
+
+\section{The Eigentoken Model and Grammar Induction}
+At the heart of the system is the notion of an \textbf{Eigentoken}. In essence, an Eigentoken is a self-contained unit representing a piece of information (data) along with the method to interpret or reconstruct that information. Formally, each Eigentoken can be viewed as a tuple:
+\[
+  T = \langle \mathit{id}, P, D, R \rangle,
+\]
+where $\mathit{id}$ is a content-derived identifier (a Secure Hash Algorithm 512-bit (SHA-512) hash of the token's content by default), $P$ is an \emph{interpretation program} (the instructions or recipe for reconstructing the token's data), $D$ is an optional raw data payload (literal content, present only for tokens that cannot or should not be decomposed further), and $R$ is a set of references to other Eigentokens that $P$ relies on (the token's dependencies). This design follows a Harvard-architecture-like separation: the program ($P$) is stored alongside the data ($D$) and references ($R$) it operates on. If $D$ is \texttt{null}, the token is purely synthetic and must be built from the referenced tokens via program $P$.
+
+For example, if we have repetitive text data where the word ``Apfelbaum'' (German for ``apple tree'') appears multiple times, the system might create an Eigentoken representing ``Apfelbaum'' and decompose it into two smaller tokens ``Apfel'' and ``baum''. The composite token $\tau_3$ for ``Apfelbaum'' could be stored as:
+\begin{verbatim}
+id: SHA512("Apfelbaum")
+P: CONCAT(tau_1, tau_2)  # instructions: concatenate tau_1 and tau_2
+D: null                  # no direct data, constructed from parts
+R: { SHA512("Apfel"), SHA512("baum") }
+\end{verbatim}
+Here $\tau_1$ and $\tau_2$ might be tokens for ``Apfel'' and ``baum'' respectively. Such a structure allows the data ``Apfelbaum'' to be reconstructed from smaller parts, which might be shared with other words like ``Apfelsaft'' or ``Baumhaus'', thereby reducing storage redundancy.
+
+
+The process that produces these tokens is the \textbf{grammar induction algorithm}. It operates in multiple phases:
+\begin{enumerate}
+\item \textit{Initial chunking:} As data is ingested, it is first divided into coarse chunks (using an approach akin to CDC to ensure content-defined boundaries). At this stage, chunks are stored as provisional tokens (with their raw data as $D$ and trivial identity programs).
+\item \textit{Pattern discovery (Grammar induction):} In the background, the system scans the corpus for repeated byte substrings and sequences. It employs a hierarchical pattern discovery with worst-case $O(n^3)$ complexity (for input size $n$), though in practice this is mitigated by heuristics and the fact that most data has structure that can be found in sub-quadratic time for each pattern. The algorithm is conceptually similar to Sequitur/Re-Pair, identifying the most frequent pair of adjacent symbols (bytes or existing tokens) and replacing them with a new rule, iteratively. However, it extends across all objects in storage (global grammar) and uses context-sensitive analysis to ensure the rules are meaningful across different files.
+\item \textit{Rule creation (Eigentoken formation):} Each discovered pattern results in the creation of a new Eigentoken (with a new $id$ computed as the hash of the pattern bytes). Its interpretation program $P$ is typically a composition of existing tokens (e.g., \texttt{CONCAT($\tau_i,\tau_j$)}). The references $R$ of this new token include $\tau_i$ and $\tau_j$, and $D$ is null because the token is defined purely in terms of smaller parts. These new tokens (grammar rules) are added to a global \emph{grammar cookbook}. The induction algorithm continues iteratively, possibly discovering higher-level patterns that consist of these tokens, building a hierarchical grammar.
+\item \textit{Stability and generalization:} Importantly, the induction aims to find patterns that are \emph{stable under edits} and common across multiple objects, not just within one file. For example, if a certain code snippet appears with slight variations across programs, the system might create tokens for the snippet and its variants, and then a higher-level token representing the common structure with parameters for differences. This cross-object generalization is a key differentiator from file-local compression: it treats the entire dataset as one large sequence for grammar discovery.
+\end{enumerate}
+
+The outcome of grammar induction is a set of production rules (tokens) that form a generative description of the dataset. This set of rules, dubbed the \textbf{grammar cookbook}, serves a dual purpose: it is the basis for reconstructing any stored object (by following the tokens and their programs), and it is the knowledge base for compiling deterministic LLMs. Each Eigentoken captures a piece of ``knowledge'' (a pattern) that can be reused in many contexts. In total, the grammar cookbook essentially represents a compressed form of the data, akin to a highly factorized dataset.
+
+\section{SHA512-Indexed B$^+$-Forest for Token Storage}
+To store and organize the large number of Eigentokens produced, we introduce a \textbf{non-strict B\textsuperscript{+}-forest index} structure. A B\textsuperscript{+}-forest is essentially a collection of B\textsuperscript{+}-tree indexes that together index all tokens; each tree corresponds to a particular subset or view (for example, tokens related to a specific topic or data type). The use of multiple trees (a forest) allows logically partitioning the grammar by semantic category or by version, which can improve locality and query performance.
+
+Key characteristics of the B\textsuperscript{+}-forest in Eigentokens include:
+\begin{itemize}
+\item \textbf{Content-addressable indexing:} The primary key for the index is the \textit{id} of each token, which is a 512-bit SHA-512 fingerprint of the token's content or definition. This ensures global uniqueness and enables content-addressable storage: any time a token with the same content is inserted, it can be recognized and deduplicated by key match.
+\item \textbf{Non-strict, recursive structure:} Unlike a standard B\textsuperscript{+}-tree that stores totally ordered keys and associated values, our tokens may have references to each other forming a DAG. The index is \emph{non-strict} in the sense that it allows references to other keys without requiring a strict hierarchy. We maintain referential integrity through careful update rules. The internal nodes of the B\textsuperscript{+}-trees can store summary information (like frequency counts of token usage, to inform the grammar learning heuristics), and the leaf nodes store either the raw data for base tokens or a pointer to the interpretation program plus references for composite tokens.
+\item \textbf{Topic-based filtering:} Each tree in the forest can correspond to a semantic category or model-bucket. For instance, one tree might index all tokens related to "code" data, another for "text", another for "images", etc. This enables \emph{topic-filtered views}: the system can quickly retrieve all tokens relevant for a given topic or domain by consulting the corresponding tree. This is particularly useful for compiling a model focused on a certain topic (see Section 5 on model compilation).
+\item \textbf{Range semantics and seekability:} To preserve the ability to do fast random access, we implement range semantics in the storage of tokens. This is analogous to maintaining an index for BGZF (blocked gzip) or other seekable compression formats, but here integrated with the grammar. The B\textsuperscript{+}-forest helps with this by storing the tokens in an order aligned with content (e.g., by token identifiers that preserve locality of references), allowing efficient mapping from logical byte ranges to sequences of tokens.
+\item \textbf{Scalability and distribution:} The forest can be sharded or distributed across nodes if needed (though the initial prototype is single-node). Write-ahead logging and snapshotting are used for crash consistency.
+\end{itemize}
+
+\section{The CELM-Lang Meta-Language (Interpretation Programs)}
+We introduce \textbf{CELM-lang}, a custom meta-language developed for this purpose. It operates at the metamodel level (often referred to as M2 in model-driven architecture terms), meaning it is a language about how to process and compose tokens, rather than about the data domain itself.
+
+CELM-lang provides a set of primitives tailored to describing token manipulation and composition. Key aspects include:
+\begin{itemize}
+\item It defines a set of \textbf{instructions and pattern combinators} that can be used in Eigentoken programs. For example, beyond simple concatenation, CELM-lang might include operations like \texttt{SPLIT(token, delimiter)}, \texttt{TOUPPER(token)} for case transformations, or \texttt{MATCH(regex)} for pattern matching. These operations enable tokens to be transformed or combined in flexible ways.
+\item CELM-lang rules can specify \textbf{match conditions} that guide the grammar induction. For instance, a rule could indicate that a certain pattern should only be applied in a specific context (e.g., a token that represents an XML tag might only match if a corresponding closing tag token is present). This allows domain knowledge or constraints to inform the induction process.
+\item CELM-lang can express \textbf{recursive and parameterized rules}, enabling the representation of entire classes of patterns with a single rule. This is useful for capturing structured data formats (like nested JSON patterns or XML trees) in a compact form.
+\item The language is designed to be easily extensible; it supports an \textbf{open-world assumption} where new instruction types can be added as needed to capture emerging patterns. This ensures the system is not limited to a fixed set of compressible structures.
+\end{itemize}
+
+By using CELM-lang to define token interpretations, we achieve a flexible \textbf{metaprogramming} capability: new types of patterns and transformations can be added without changing the C++ core of the system; instead, they are introduced as new CELM-lang constructs that the system's runtime can execute. This is analogous to how SQL or regex can extend what you can do with a database without recoding the database engine. In our case, CELM-lang enables the storage system to be taught new "analysis recipes" at runtime.
+
+Furthermore, CELM-lang descriptions support the notion of an \textbf{omni-LLM} vision: because the language can describe interpretation programs that act on tokens, an advanced use is to have tokens that describe how to answer queries or how to modify the grammar itself. This is where \textit{M3} (the self-adaptation metamodel) comes in: at the highest level, the system can use CELM-lang to script its own evolution. For example, an agentic query might trigger a CELM-lang routine that scans for inefficiencies in the grammar (like two similar tokens that could be merged) and then introduces a new rule to improve it. This aspect is still exploratory, but it lays groundwork for a self-reflective AI system grounded in storage.
+
+\chapter{Design and Architecture}
+The Eigentokens system is comprised of several core components that together implement the grammar-based storage and compilation functionality. The architecture has been carefully designed to decouple the latency-sensitive storage operations from the heavier background analysis, and to provide interfaces for both data access and introspection/control. Figure (not shown) illustrates the high-level component architecture, which we describe below.
+
+\section{Core Components Overview}
+\begin{description}
+\item[A1. Grammar Induction Engine:] The component responsible for discovering patterns and creating new Eigentokens. It implements the multi-phase $O(n^3)$ grammar learning algorithm with numerous optimizations. In practice, it uses a three-phase approach: initial content-defined chunking, followed by a context-sensitive pattern mining across the corpus, and finally grammar rule consolidation. To handle large data, it employs \emph{dynamic CDC} with grammar-aware boundaries (adjusting chunk splits on the fly when grammar patterns are recognized, rather than using fixed-size windows) and caches frequent sequences to avoid recomputation. This engine works mostly asynchronously in the background, but it hooks into the ingestion path to capture new data.
+\item[A2. B$^+$-Forest Index:] The storage backend is a collection of B$^+$-trees, collectively a forest, as described in Section 3.2. This index stores all Eigentokens keyed by their SHA-512 hash. It supports operations to insert new tokens, look up tokens by id, and iterate or range-scan tokens (for range queries). The index is \emph{non-strict} in that it is aware of the reference relationships between tokens, but it tolerates ephemeral inconsistencies (e.g., a token might reference another token that is not yet fully indexed, during intermediate states of analysis) knowing that eventual consistency will be reached once the induction completes. Each tree in the forest can be thought of as a shard or a filtered view (e.g., one tree per data domain or per top-level category). The B$^+$-forest provides $O(\log N)$ access time for tokens and scales to very large N due to the balanced tree structure.
+\item[A3. Asynchronous Processing Pipeline:] Where beneficial, literal payloads can be stored in a seekable compressed form (e.g., zstd-seekable) to improve range-read performance without sacrificing compression ratio.
+. To reconcile the need for immediate data writes with the expensive grammar analysis, Eigentokens employs an asynchronous multi-stage pipeline. When new data is ingested, the pipeline performs:
+  \begin{enumerate}
+    \item \textbf{Stage 1: Immediate Ingestion.} The data is chunked (content-defined) and each chunk is immediately assigned a provisional Eigentoken (with a hash id and raw data payload). These are inserted into the B$^+$-forest right away. This stage is optimized for low latency (target $<$10\,ms per chunk for commit) to ensure that writes are acknowledged quickly. The output is a set of stable references (the new tokens or references to existing tokens if duplicates were found).
+    \item \textbf{Stage 2: Background Grammar Induction.} The Grammar Induction Engine (A1) picks up the new data from a work queue and begins analyzing it in the context of the global corpus. It performs a similarity search step (e.g., fingerprint- and reference-guided candidate retrieval) before deeper grammar induction to prioritize high-yield pattern candidates.
+ It may discover that some chunks are redundant or part of larger patterns that have appeared before; it will create new higher-level tokens as needed. This stage runs concurrently and can take substantially longer (it might batch many updates together). The system ensures that Stage 1 output is always a correct (if not fully optimal) storage of the data, and Stage 2 will only refine the internal representation.
+    \item \textbf{Stage 3: Index Optimization and Compaction.} Periodically, the system rebalances and compresses the B$^+$-forest (similar to a compaction in LSM trees). It cleans up any redundant tokens that Stage 2 rendered obsolete (e.g., if a chunk got replaced by a grammar rule, the raw chunk might be dropped or archived) and updates reference links. This stage also integrates any deferred compression (if large literal payloads can now be compressed after identifying boundaries) and writes snapshots or checkpoints for recovery.
+  \end{enumerate}
+  The pipeline decouples write latency from heavy processing: data is safely stored in Stage 1, and the later stages can lag behind without affecting data durability or immediate consistency. In case of a crash, the system can recover from the latest checkpoint plus the log of Stage 1 operations.
+\item[A4. Storage Interface (S3/KV Facade):] Eigentokens exposes an interface compatible with object storage (like Amazon S3) and key-value store semantics, so that it can be used as a drop-in replacement for existing storage systems. The interface supports \texttt{PUT/GET/HEAD} semantics and can optionally accept client-provided fingerprints to short-circuit uploads when content is already present. Crash safety is ensured via write-ahead logging and periodic snapshots, such that Stage~1 commits remain durable independent of later consolidation.
+ Applications can PUT and GET objects; under the hood these calls interact with the B$^+$-forest. The interface supports standard HTTP Range requests for partial reads \cite{Fielding2022}, thanks to the token-aligned block mapping (the system calculates which tokens correspond to the requested byte range and only reconstructs that portion). The KV interface allows direct addressing of tokens by hash as well, which is useful for deduplication (if a client provides a hash of content it is about to upload, the system can short-circuit and just return a reference if it already has that token). This layer also implements access control, basic metadata (size, timestamps), and could integrate with cloud storage APIs.
+\item[A5. Analysis and Control API:] In addition to the data access interface, a secondary API is provided for introspection and control of the system. This includes retrieving statistics about deduplication (e.g., how many tokens exist, distribution of token sizes), querying the grammar cookbook (e.g., listing the top-$k$ most reused patterns), and adjusting parameters of the induction (such as toggling certain heuristics, or specifying a new pattern through CELM-lang to guide the induction). This is critical for debugging and tuning, given the complex behavior of the grammar learning process. It also allows an operator or researcher to inject domain knowledge (for example, one could predefine a token structure for known file formats or known patterns, serving as a hint to the system).
+\item[A6. Eigentoken Mock Rules and Testing Suite:] For development and demonstration, the system includes a set of \textbf{mock rules} – essentially hard-coded grammar rules for simple patterns – and a testing harness to verify correctness. These help ensure that as new features are added to the grammar induction engine or CELM-lang, basic invariants (like lossless reconstruction) remain intact. The mock rules also serve as examples for how grammar rules can be structured.
+\item[\emph{(A7. Roadmap: Replication/Erasure and LLM Integration)}] Beyond the scope of the initial project, we note some planned extensions: adding replication and erasure coding at the storage layer (applied on grammar leaves and/or token payload segments, to provide fault tolerance by duplicating or encoding tokens across multiple machines or data centers), and exploring how compiled ELMs might integrate with or complement traditional learned models (e.g., by providing architecture blueprints or pre-trained components).
+\end{description}
+
+\section{Workflow and Data Ingestion}
+The workflow of the Eigentokens system during data ingestion and model compilation involves several stages:
+\begin{enumerate}
+\item **Data Ingestion:** New data (e.g., a file or object) is written to Eigentokens via the storage interface. The system performs Stage 1 ingestion (as described in A3): content-defined chunking and immediate token creation. The data is now stored (in duplicate-friendly form) and the client’s write is acknowledged.
+\item **Background Processing:** The new data’s chunks are queued for analysis. The Grammar Induction Engine gradually processes these chunks (potentially along with others in a batch), discovering new patterns and creating higher-level tokens. The B$^+$-forest is updated with these new tokens. If certain raw chunks become redundant (fully represented by grammar rules), they may be marked for lazy compression or removal.
+\item **Index Maintenance:** Periodically, the system triggers Stage 3 compaction on the B$^+$-forest. This might merge nearby tokens, compress literal data that can now be compressed, remove obsolete tokens, and rebalance trees for optimal lookup performance. A snapshot is taken so that, in event of failure, recovery can skip redoing already-applied grammar rules.
+\item **Model Compilation:** At any point (on demand or at set intervals), the system can compile a deterministic language model (ELM) from the grammar tokens. This involves translating the grammar cookbook into a neural network structure and weights. In practice, this might be implemented by generating code or data that initializes an LLM’s parameters according to the grammar rules. The details of this compilation are part of Section 5.
+\item **Query and Evolution:** Users or processes can query the grammar (via the Analysis API) to understand the current patterns or manually inject new grammar rules (for instance, if an expert recognizes a pattern that the system hasn’t yet, they could add it). This process effectively evolves the model and the storage format in tandem, under human guidance.
+\end{enumerate}
+
+Overall, the system continuously cycles through ingestion and analysis. Data is always quickly stored and accessible, but the internal representation is continuously improving as more patterns are discovered. This “learn-as-you-store” paradigm ensures that storage efficiency and the implicit model quality both improve over time.
+
+\chapter{Evaluation Plan}
+To validate the Eigentokens approach, we outline an evaluation plan focusing on storage efficiency, performance overhead, and basic model efficacy.
+
+\section{Datasets and Workloads}
+We consider multiple dataset categories to test cross-domain effectiveness:
+\begin{itemize}
+\item \textbf{Code repositories:} e.g., a collection of open-source code (to test deduplication across versions and model compilation for code).
+\item \textbf{Log files:} large log datasets with repetitive patterns.
+\item \textbf{Text corpora:} a snapshot of Wikipedia or similar (to test on natural language).
+\item \textbf{Genomic data:} a set of DNA sequences or similar (to see how the system handles highly structured, repetitive data with the BGZF\cite{Li2011} baseline).
+\item \textbf{Mixed dataset:} a combination of documents, images (represented as binary), etc., to see how the system copes with heterogeneous data.
+\item \textbf{Columnar data:} e.g., Parquet/ORC-like exports or CSV-to-columnar transforms (to evaluate robustness under schema-regular structures and range-heavy access).
+\end{itemize}
+This selection covers a range of redundancy profiles and data types.
+
+\section{Metrics}
+Key metrics we will measure include:
+\begin{itemize}
+\item \textbf{Compression/Deduplication Ratio:} Final stored size (including token metadata) vs. original size.
+\item \textbf{Write Amplification:} Total bytes written to storage (including tokens and logs) vs. bytes of new data. Also number of unique tokens created per byte of input.
+\item \textbf{Read Latency:} Time to read a random object (or range) from the system vs. time to read from a baseline system (like a normal file or object store).
+\item \textbf{Throughput:} Ingest rate (bytes/sec) sustained for a large dataset, and how it compares to baseline deduplication tools.
+\item \textbf{Model Fidelity:} For compiled models, if applicable, measure basic task performance (e.g., perplexity on held-out domain data) and ensure determinism (identical outputs across runs).
+\item \textbf{Write and Deletion Amplification:} Total bytes written and deleted/rewritten on storage (including tokens and logs) relative to new data and update operations. Also track the number of unique tokens created per byte of input.
+\item \textbf{Read Latency:} Time to read a random object (or range) from the system vs.\ a baseline system; report percentiles 50th/95th/99th percentile (P50/P95/P99).
+\end{itemize}
+
+\section{Baseline Systems}
+To contextualize results, we compare against several baseline setups:
+\begin{itemize}
+\item \emph{FastCDC + Zstandard (zstd):} content-defined chunking with an 8~KB average chunk size, then compress chunks with zstd (e.g., level 3).
+\item \emph{FastCDC $\pm$ zstd-seekable:} evaluate both plain zstd and a seekable variant to quantify the trade-off between range performance and ratio.
+\item \emph{Fixed-size blocks + seekable compression:} 4~KB fixed blocks with seekable compression (e.g., BGZF-like layouts or zstd-seekable), optimized for random reads.
+\item \emph{Blocked GNU zip format (BGZF):} 64~KB blocks as used in genomic tooling \cite{Li2011}, focused on range performance.
+\item \emph{RocksDB (LSM-tree):} write-optimized key-value (KV) baseline with fast value compression.
+\item \emph{Optional: WiscKey:} a separation-of-values design to contextualize amplification and tail-latency behavior (if feasible within scope).
+\item (We also compare with \emph{UltiHash} on code data to quantify improvements over grammar deduplication without deterministic model compilation.)
+\end{itemize}
+
+\section{Experiments}
+We plan a series of experiments to evaluate Eigentokens:
+\begin{itemize}
+\item \textbf{Deduplication Effectiveness:} For each dataset, measure the deduplication ratio (and compression ratio, if applicable) of Eigentokens vs. baselines. We expect significant gains especially on cross-object redundancies.
+\item \textbf{Performance Overhead:} Measure ingestion throughput and read latencies at various percentiles. Key interest is P95 read latency overhead (aiming for $\leq$+15\% vs. uncompressed direct store).
+\item \textbf{Update Efficiency:} On datasets with versions (like code), measure how many bytes are rewritten when data is slightly modified, comparing Eigentokens vs. baseline chunking vs. RocksDB.
+\item \textbf{Scalability:} If resources allow, test on increasing data sizes (up to hundreds of GBs) to see if induction time remains manageable and if storage overhead grows sub-linearly.
+\item \textbf{Model size vs traditional:} if we compile a model on, say, the code dataset, how large is the resulting neural network (in terms of number of weights) compared to if we had trained a neural model on the same data? We expect a reduction since we don't need as many parameters due to reusing modules.
+\item \textbf{Inference latency of the compiled model} (if within scope to test).
+\item \textbf{Robustness under transformations:} Evaluate deduplication and range performance under shift/insert/rename changes (e.g., log line inserts, code refactors, column reorders) to validate stability of learned grammar rules.
+\item \textbf{Ablation study:} Disable individual stages (similarity search, grammar consolidation, range-map heuristics) to attribute gains to specific mechanisms.
+\end{itemize}
+
+\noindent \textbf{Baselines:} In summary, we will compare our system (Eigentokens) to:
+\begin{itemize}
+\item \emph{FastCDC+zstd} (high-throughput dedup/compression)
+\item \emph{Fixed-block+seekable compression} (random-access optimized)
+\item \emph{BGZF} (block compression for genomic data)
+\item \emph{RocksDB LSM} (write-optimized KV store)
+\item Possibly \emph{UltiHash} results from prior work for reference on dedup only.
+\end{itemize}
+This covers a spectrum from no dedup (fixed blocks) to heavy dedup (FastCDC, UltiHash grammar) and helps position our contributions.
+
+\section{Experimental Plan}
+For each dataset, we will perform:
+\begin{enumerate}
+\item A full ingestion with Eigentokens, capturing storage stats and time taken.
+\item Ingestions with each baseline (where applicable; e.g., we'll use a custom harness to simulate FastCDC on the dataset).
+\item For dynamic datasets (code versions, logs), perform updates and measure how many chunks/tokens get rewritten versus reused.
+\item Compile at least one model from the tokens (for a domain where we have ground truth, e.g., compile a small language model on the text dataset) and verify its determinism and basic performance on a validation task (if feasible).
+\item Stress test: run concurrent clients doing reads and writes to see how the system performs under load (especially testing that Stage1 write latencies remain low).
+\end{enumerate}
+
+\chapter{Expected Results and Discussion of Limitations}
+Based on our design and preliminary experiments, we anticipate the following results:
+
+\section{Expected Outcomes}
+\textbf{Storage Efficiency:} Eigentokens is expected to significantly outperform conventional chunk-based deduplication. We hypothesize a \textbf{25--40\% higher deduplication ratio} compared to Fast content-defined chunking (FastCDC) on cross-object corpora, thanks to its ability to capture redundant patterns that span file boundaries and to merge similar but not identical sequences (something hash-based chunking cannot do). Additionally, by compressing on grammatical units, we expect an extra 15--20\% compression gain beyond what Zstandard (zstd) or GNU zip (gzip) can achieve on chunked data, as the grammar acts like a specialized dictionary. Write amplification should be lower: possibly around 0.7$\times$ of RocksDB's amplification (meaning 30\% less), since we do not repeatedly flush and compact entire key ranges---only small grammar rules propagate.
+
+\textbf{Performance:} For read latency, our goal of 95th percentile (P95) within +15\% of baseline is ambitious but plausible. The indirection through tokens might add a small overhead (especially if a read spans many small tokens), but the use of token-aligned mapping and our Virtual Machine (VM) reconstruction is efficient in C++. Range reads within large files will likely hit a sweet spot where only a handful of tokens are needed. The asynchronous pipeline should handle high write rates; we expect initial ingest throughput on par with or better than FastCDC (which can be 1--2~Gigabytes per second (GB/s)) because Stage~1 is lightweight and mostly just hashing and writing. The heavy grammar work happens later but can leverage all Central Processing Unit (CPU) cores.
+
+\textbf{Deterministic Compilation and Model Quality:} The compilation of a Large Language Model (LLM) from the grammar is expected to produce a functioning model that can, for instance, generate text in a constrained domain or solve tasks related to the stored data. We expect \textbf{100\% deterministic} behavior across runs \cite{Fielding2022}. The size of the compiled model should be smaller than a trained model on the same data, because grammar rules provide a form of parameter sharing and we do not need massive overparameterization; an estimate is around 70\% size reduction for equivalent performance on known tasks. However, the quality of outputs from such compiled models is still an unknown---likely inferior to state-of-the-art trained models on open-ended natural language tasks, because our method lacks the generalization that learning provides. The advantage is in niche domains or tasks where reliability and traceability trump raw skill.
+
+\section{Limitations}
+Despite its promise, the Eigentokens approach has several limitations and challenges:
+\begin{itemize}
+\item \textbf{Grammar Induction Overhead:} The biggest concern is the computational cost of pattern discovery. In worst-case scenarios (like highly repetitive data or pathological inputs crafted to confuse the induction), the $O(n^3)$ algorithm could become a bottleneck. We mitigate this with heuristics (like limiting the length of patterns considered, using sampling for very large data, etc.), but there is a risk that the system might struggle with, say, a 1~TB single file with no obvious structure. In practice, average-case behavior is much better, but careful benchmarking will reveal if induction latency is acceptable for near-real-time use.
+\item \textbf{Metadata Size and Management:} By turning repeated data into references, we trade data for metadata (token descriptors). If a dataset has little redundancy, our approach might actually bloat storage due to overhead of storing tokens that don't help much. The worst case would be completely random data: our system would still create tokens for it, but no reuse would occur. In such cases, we rely on fallbacks (like if dedup ratio is below a threshold, we might revert to storing raw data blocks). Additionally, keeping billions of tokens in memory indices could strain memory; our design uses disk-based B$^+$-trees to alleviate that, but lookup times could increase if the working set is huge.
+\item \textbf{Complexity of System Tuning:} This system has many tunable parameters (thresholds for creating tokens, hash win-size for chunking, etc.) and is inherently more complex than a straightforward storage engine. Ensuring robust, hands-off operation is a challenge. In early stages, we expect needing expert intervention to optimize the grammar induction for different data types. This could limit adoption unless we can automate or simplify configuration.
+\item \textbf{Limited Scope of LLM Compilation:} The deterministic models we compile will likely be domain-specific and limited in capability. We are not replacing GPT-5 in general conversations; rather, we might compile something like a code suggestion model from a codebase, or a Q\&A model from a set of documents. The approach so far also does not integrate with large-scale pre-trained embeddings or similar, meaning it might not capture subtle semantic relationships. It's more akin to a rule-based or case-based reasoning system in the first iteration. This is a limitation if one expected an out-of-the-box general AI. However, the framework could incorporate learned components in the future (for instance, grammar rules could link to a small neural module for things that are easier to learn statistically).
+\item \textbf{Deterministic Errors:} If a mistake or spurious pattern gets into the grammar (e.g., merging two patterns that should have stayed separate), that error will propagate deterministically to all outputs. While this is good for traceability (we can pinpoint the wrong rule), it also means the model will consistently make that error until the rule is fixed. There is no random chance that sometimes it gets it right (unlike a stochastic model might). This shifts the problem from one of probabilistic correctness to one of guaranteed but possibly systematic errors.
+\item \textbf{Security and Integrity:} Storing and executing interpretation programs (even in a controlled VM) raises security questions—maliciously crafted data could in theory create a pathological grammar that exhausts resources or triggers degenerate behavior. We will implement limits (e.g., recursion depth, runtime limits on the VM) to prevent abuse, but this is an area to watch.
+\end{itemize}
+
+\chapter{Conclusion and Outlook}
+Eigentokens introduce a fundamentally new approach to data storage and language model construction, one that marries the strengths of data compression, compiler theory, and machine learning into a single framework. By treating each repeating pattern as a first-class object (an Eigentoken) with its own identity and reconstruction program, we attain extraordinary levels of deduplication and create a knowledge base that is explicit and manipulable. In contrast to the prevailing trend of ever-larger opaque neural networks, Eigentokens offer a path toward \textbf{interpretable, deterministic, and maintainable AI models}. Every decision made by an Eigentoken-compiled model can be traced to a human-readable grammar rule, bridging the gap between symbolic AI (with its clarity and logic) and sub-symbolic AI (with its data-driven learning), and hopefully combining the best of both.
+
+The successful completion of this project will yield:
+\begin{itemize}
+\item A high-performance C++ prototype demonstrating the feasibility of grammar-based storage and deterministic compilation at least on medium-scale datasets.
+\item Comprehensive benchmarks illustrating the trade-offs of our approach vs. traditional systems, potentially influencing how future storage engines are designed for AI workloads.
+\item A set of case studies (via compiled models) that showcase how one might build specialized LLMs without any “learning” in the traditional sense, but rather through analysis and compilation.
+\end{itemize}
+
+\textbf{Future Work:} The journey does not end here. There are several promising directions to extend Eigentokens:
+\begin{enumerate}
+\item \emph{Scaling and Distribution:} Adapting the system to a distributed environment with multiple nodes. This involves adding replication and erasure coding as hinted in the roadmap, and possibly a distributed hash table for token lookup. Ensuring the grammar induction works in a distributed fashion (without needing a single node to see all data) would be challenging but crucial for scalability.
+\item \emph{Enhanced Model Integration:} Right now, the compiled models are relatively simple. Future research can integrate small learned neural components for the parts that are hard to capture with explicit rules. For instance, one could imagine a hybrid where grammar provides a network architecture skeleton and initial weights, which could then be lightly fine-tuned on a specific task for better performance, while still retaining determinism in the base knowledge.
+\item \emph{User Feedback Loop:} For an agentic AI system, enabling users or the system itself to suggest new grammar rules (or remove erroneous ones) in a controlled way will be important. This could evolve into a form of continuous learning where, instead of gradient updates, we have rule updates potentially guided by an expert or an automated prover checking consistency.
+\item \emph{Applicability to other data domains:} Investigate how Eigentokens might apply to multimedia (images/video). Our current method treats everything as bytes, but extending grammar induction to two-dimensional data (images) or temporal patterns (video) could open up new possibilities in compressing and understanding that data. Perhaps Eigentokens could lead to deterministic compiled models in computer vision or audio processing by discovering patterns in those modalities.
+\item \emph{The Omni-LLM Vision:} Ultimately, the goal of an omni-LLM—a system that can answer queries or generate content by purely executing stored knowledge (with no random sampling)—looms as a grand challenge. Eigentokens provide the blueprint for this: a modular, updatable knowledge base. Achieving parity with neural LLMs in capability remains distant, but even partial success (in terms of reliability) could be transformative for domains like law, medicine, or safety-critical systems where determinism and auditability are required.
+\end{enumerate}
+
+In conclusion, this project serves as a stepping stone towards reimagining AI model creation. By focusing on grammar, structure, and determinism at the storage level, we lay the groundwork for AI systems that are as rigorous and transparent as traditional software, yet able to harness the complexity of big data. The positive results we anticipate (improved deduplication, reasonable performance, and working deterministic models) would validate this direction and justify further exploration. We hope that Eigentokens can inspire a new class of systems at the intersection of databases, compilers, and AI, ultimately contributing to more trustworthy and understandable intelligent systems.
+
+\end{document}
