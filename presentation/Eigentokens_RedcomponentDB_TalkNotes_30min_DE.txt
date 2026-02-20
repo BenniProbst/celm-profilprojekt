@@ -1,98 +1,131 @@
-Eigentokens & RedcomponentDB — 30-minute interim talk (speaker cheat sheet)
-Date: 2026-01-08
+Eigentokens & Comdare Database — 30-minute interim talk (speaker cheat sheet)
+Date: 2026-02-20 (updated from 2026-01-08)
 Goal: Explain why grammar-aware storage enables (1) stronger deduplication, (2) auditable/deterministic model compilation, and (3) a measurable benchmark loop.
 Key message (one sentence): We treat storage as the 'compiler front-end' that learns a cross-object grammar; the same grammar becomes a deterministic substrate to compile and continuously improve domain LLM artifacts.
 
+NOTE: "RedcomponentDB" was renamed to "Comdare Database" / "comdare-db" (brand: Comdare, company: BEP Venture UG).
+
 Slide-by-slide outline (DE):
 
-[0:00–1:00] Slide 1: Title – Eigentokens & RedcomponentDB
+[0:00-1:00] Slide 1: Title - Eigentokens & Comdare Database
 - Kontext: Profilprojekt Anwendungsforschung (INF-PM-FPA), TU Dresden / ScaDS.AI.
-- Ein Satz: 'Grammar-aware storage → deterministic compilation + benchmark loop'.
-- Kurz: Was neu ist seit letzter Zwischenfolie (RedcomponentDB-Implementierung + Phasen/Contracts).
+- Ein Satz: 'Grammar-aware storage -> deterministic compilation + benchmark loop'.
+- Kurz: Was neu ist seit letzter Zwischenfolie (Comdare-Implementierung + Phasen/Contracts).
+- UPDATE: 280.000 LOC, 250+ Repos, 88% Implementierung, 19 Baugruppen.
 
-[1:00–2:00] Slide 2: Agenda
-- Roadmap der nächsten 30 Minuten: Modell → Chunking → DB → Phasen → Compile → Evaluation.
-- Erwartungsmanagement: heute Zwischenstand, Fokus auf Architektur/Contracts, nicht auf endgültige Zahlen.
+[1:00-2:00] Slide 2: Agenda
+- Roadmap der naechsten 30 Minuten: Modell -> Chunking -> DB -> Phasen -> Compile -> Evaluation.
+- Erwartungsmanagement: heute Zwischenstand, Fokus auf Architektur/Contracts, nicht auf endgueltige Zahlen.
 
-[2:00–4:00] Slide 3: Motivation: from opaque training to auditable compilation
+[2:00-4:00] Slide 3: Motivation: from opaque training to auditable compilation
 - Problem: Training ist teuer/opaqu; Updates/Debugging schwierig.
-- These:: Wenn wir Wissen als explizite Regeln speichern (Grammatik), ist es auditierbar.
-- Brücke: Redundanz in Daten ist 'Signal' für wiederverwendbare Struktur.
+- These: Wenn wir Wissen als explizite Regeln speichern (Grammatik), ist es auditierbar.
+- Bruecke: Redundanz in Daten ist 'Signal' fuer wiederverwendbare Struktur.
 
-[4:00–6:00] Slide 4: Contributions / what’s new
-- 4 Contributions kurz durchgehen: (1) Grammar-aware kernel, (2) token store + artifacts, (3) six-phase contract, (4) compiler path.
+[4:00-6:00] Slide 4: Contributions / what's new
+- 13 Contributions in 3 Kategorien:
+  Theoretical (C1-C4): Unified Framework, Inverse Learning, Deterministic Weights, CELM-lang
+  Systems (C5-C8): B+-Forest, Token-aligned Compression, 3-Stage Async Pipeline, Agentic Storage
+  Empirical (C9-C13): Cross-domain Benchmarks, Open-Source Referenz, PB-Scale Validation, Multi-Platform Determinism
 - Klarstellen: 'Deterministisch' bedeutet reproduzierbare Artefakte, nicht perfekte Antworten.
+- 6 formale Research Questions (RQ1-RQ6).
 
-[6:00–8:00] Slide 5: Eigentoken model (⟨id,P,D,R⟩)
+[6:00-8:00] Slide 5: Eigentoken model (id,P,D,R)
 - Eigentoken = Daten + Interpretation + Referenzen.
-- id = content hash (SHA-512) → content-addressable + dedupe.
+- id = content hash (SHA-512) -> content-addressable + dedupe.
 - Beispiel 'Apfelbaum' zeigt Komposition und Wiederverwendung.
+- UBigInteger: Custom 512-bit Arithmetik, bit-identisch auf x86_64/ARM64/RISC-V.
 
-[8:00–10:00] Slide 6: Grammar induction → “grammar chunks”
-- Induktionspipeline: seeding → pattern discovery → rule formation → cookbook.
-- Wichtig: cross-object (über Dateien/Objekte hinweg) statt nur within-file.
+[8:00-10:00] Slide 6: Grammar induction -> "grammar chunks"
+- Induktionspipeline: seeding -> pattern discovery -> rule formation -> cookbook.
+- Wichtig: cross-object (ueber Dateien/Objekte hinweg) statt nur within-file.
 - Nebenprodukt: Range maps / seekable Rekonstruktion.
+- O(n^3) Algorithmus: Sequitur-inspiriert, laeuft asynchron in Stage 2.
 
-[10:00–12:00] Slide 7: NEW: Chunking strategies (Fixed vs CDC vs Grammar)
-- Drei Ebenen von 'Chunking': Fixed blocks (simpel) → CDC/FastCDC (shift robust) → Grammar chunks (strukturbasiert).
+[10:00-12:00] Slide 7: Chunking strategies (Fixed vs CDC vs Grammar)
+- Drei Ebenen von 'Chunking': Fixed blocks (simpel) -> CDC/FastCDC (shift robust) -> Grammar chunks (strukturbasiert).
 - Kernargument: Grammatik kann Sequenzen zusammenfassen, die nicht bit-identisch in gleichen Grenzen sind.
 - Trade-off: Mehr Analyse/Metadaten vs weniger Platz.
+- Ziel: 25-40% besser als FastCDC durch cross-object Grammar Discovery.
 
-[12:00–14:00] Slide 8: NEW: Practical grammar chunking pipeline
-- Praktische Pipeline erklären: CDC seed → similarity search → rule mining → rule promotion → range map refresh.
+[12:00-14:00] Slide 8: Practical grammar chunking pipeline
+- Praktische Pipeline erklaeren: CDC seed -> similarity search -> rule mining -> rule promotion -> range map refresh.
 - Heuristiken: stability under edits, locality, rollback-safe.
-- Ergebnis: cookbook bleibt stabil, Referenzen ändern sich kontrolliert.
+- Ergebnis: cookbook bleibt stabil, Referenzen aendern sich kontrolliert.
+- 9 Fingerprint-Algorithmen fuer Multi-Level Similarity Detection.
 
-[14:00–16:00] Slide 9: RedcomponentDB: storage engine structure
-- RedcomponentDB als 'token store + indices + artifacts'.
-- Module: index/DAG, durability, access path.
-- Path expansion: tools/products Schema, hash-indexed stores.
+[14:00-16:00] Slide 9: Comdare Database: storage engine structure
+- Comdare-DB als 'token store + indices + artifacts'.
+- Baugruppen-Prinzip: Bauteil -> Baugruppe -> Produkt.
+- 7 Baseline-Tiers (B0-B6): 65 Module, 75.685 LOC.
+- Kern: ALLE DB-Bloecke verwenden UBigInteger als Verarbeitungselement.
+- UPDATE: 9/19 Baugruppen >90% implementiert.
 
-[16:00–17:30] Slide 10: Storage & access semantics (Range reads)
+[16:00-17:30] Slide 10: Storage & access semantics (Range reads)
 - Warum HTTP Range wichtig ist: partial read ohne full decompress.
-- Mechanismus: logical range → token spans → VM reconstruct.
+- Mechanismus: logical range -> token spans -> VM reconstruct.
 - Abgrenzung: nicht klassisches Chunk-Store; es ist grammar-native.
+- 12 Compression-Strategien: zstd/LZMA/LZ4/Snappy + seekable + grammar-aware.
 
-[17:30–19:00] Slide 11: Execution & validation (6-phase contract)
-- 6-Phasen-Contract: P0 bootstrap, P1 toolchain, P2 build, P3 interpreter/plugins, P4 accelerators, P5 benchmarking.
-- Modes direct/managed/server: 'done' ist mode-spezifisch.
-- Ziel: reproduzierbare Marker/Reports pro Run.
+[17:30-19:00] Slide 11: Three-Stage Async Pipeline (Component A3)
+- Stage 1: IMMEDIATE (<10ms) — Chunking, Hashing, Dedup-Check, Write + ACK.
+- Stage 2: BACKGROUND (Sekunden-Minuten) — Grammar Induction O(n^3), Pattern Discovery.
+- Stage 3: COMPACTION (periodisch) — B+-Forest Rebalancing, Garbage Collection.
+- io_uring fuer Zero-Copy I/O, CRDTs fuer verteilte Konsistenz, Lock-free Queues.
 
-[19:00–21:00] Slide 12: NEW: Phase contract details + run/report layout
-- status.json minimal fields: phase, mode, run_id, signals, digest.
-- Canonical run layout zeigen (wo Logs/Reports liegen).
-- Warum das für 'compile' entscheidend ist: artifacts versionierbar, compare_benchmark möglich.
+[19:00-21:00] Slide 12: Build System & 6-Phase Validation Pipeline
+- Custom BuildSystem: 1.921 Features, 21 Module, 94.400 LOC.
+- 6 Phasen: Bootstrap -> GroundTruth -> ProjectBuild -> TargetDelivery -> HardwareAccel -> AIOptimization.
+- Bridge Pattern: Jedes Modul hat eigene interface.sh/bat/cmake.
+- XML-basierte buildsystem.xml statt CMakeLists.txt (Konsistenz ueber 250+ Repos).
+- 12-Runner CI/CD: 4 K8s + 4 BM x86_64 + 2 macOS + 1 RPi5 + 1 RISC-V.
+- BuildSystem = wissenschaftliches Instrument fuer Determinismus-Beweis.
 
-[21:00–23:00] Slide 13: LLM compiler (ELM/CELM): grammar cookbook as input
+[21:00-23:00] Slide 13: LLM compiler (ELM/CELM): grammar cookbook as input
 - Compiler-Input: cookbook + constraints + target domain.
 - Output: deterministische Modell-Artefakte (ELM/CELM) + optionale trainierbare Layer.
 - Betonung: erst Domain-LLMs, nicht allgemeines ChatGPT.
+- CELM-lang: 3-Level Metamodel (M1 Grammar Learning, M2 Grammar Application, M3 Self-Adaptation).
+- Produktionsfrequenzen -> Netzwerk-Gewichte (KEIN Gradient Descent!).
 
-[23:00–25:00] Slide 14: NEW: Compilation pipeline (grammar → model artifacts)
-- Flow: corpus → grammar → token DB → compile → artifacts store.
-- Determinismus: gleiche Inputs → identische Artefakte; Hashes/Manifeste sichern.
+[23:00-25:00] Slide 14: Compilation pipeline (grammar -> model artifacts)
+- Flow: corpus -> grammar -> token DB -> compile -> artifacts store.
+- Determinismus: gleiche Inputs -> identische Artefakte; Hashes/Manifeste sichern.
 - Optional: LoRA/QLoRA als 'delta artifacts' (wenn Training sinnvoll).
+- Omni-LLM Vision: Universal-Modell durch Ausfuehrung gespeicherter Grammatik-Regeln.
 
-[25:00–26:30] Slide 15: NEW: Benchmark & compare_benchmark promotion loop
+[25:00-26:30] Slide 15: Benchmark & compare_benchmark promotion loop
 - compare_benchmark: kompatible Targets finden (compatibilityCheck).
 - Benchmark profile schema: Funktionen/Metriken/Thresholds.
-- Promotion loop: build candidate → run → compare → update AM DB → decide promote.
+- Promotion loop: build candidate -> run -> compare -> update AM DB -> decide promote.
+- MinIO Artifact Storage: 350 GB Cache + 350 GB Artifacts, path: {project}/{platform}/{arch}/{build_id}/.
 
-[26:30–28:00] Slide 16: Evaluation plan
+[26:30-28:00] Slide 16: Evaluation plan
 - Datasets (code/logs/text/binary), Baselines (FastCDC+zstd etc.).
 - Metrics: dedup ratio, write amplification, latency percentiles, determinism.
 - Fokus: messbare Claims + Reproduzierbarkeit.
+- Comparative Landscape: Eigentokens einzigartig in 6/6 Dimensionen
+  (Grammar-Aware + Deterministic + Cross-Object + Model-Compile + Multi-Platform + Incremental).
 
-[28:00–29:00] Slide 17: Current status (what’s done vs next)
-- Was bereits steht: docs/contracts, run layout, templating baseline.
-- Größte Lücke: BuildUtilities C++ interpreter + plugin pipeline.
-- Was als nächstes implementiert wird (Phase 3 zuerst).
+[28:00-29:00] Slide 17: Current status (what's done vs next)
+- AKTUELL (Feb 2026):
+  280.000 LOC C++23, 250+ Repos, 2.723 Features, 88% implementiert.
+  Foundation: 99%, Network: 95%, Encryption: 94%, Config: 100%.
+  BuildSystem: 92% (1.921 Features). DB-Product: 55% (75.685 LOC).
+  CI Pipeline voll funktional (v3.6), 9/12 Runner online.
+  Experiment-DB Pipeline SUCCESS, 7/7 DB-Systeme verifiziert.
+- CELM A1-A7: Architektur komplett spezifiziert, C++ Implementierung steht aus.
+- Vorvalidierung: 380K LOC Self-Hosting + 1 PB Bosch XC Abstatt.
 
-[29:00–29:40] Slide 18: Risks & mitigations
-- Risiken: Induktionskosten, Metadaten, Sicherheit/VM.
+[29:00-29:40] Slide 18: Risks & mitigations
+- Risiken: Induktionskosten O(n^3), Metadaten-Overhead, Sicherheit/VM.
 - Mitigation: Heuristics, fallbacks, sandboxing, gating.
+- Neues Risiko: Cross-Platform Determinismus (Mitigation: 12-Runner CI).
+- Neues Risiko: Grammar Cookbook Explosion (Mitigation: M3 Self-Optimization).
 
-[29:40–30:00] Slide 19: Next milestones + ask for feedback
-- Nächste Milestones (P3 → P4 → P5).
+[29:40-30:00] Slide 19: Next milestones + ask for feedback
+- Naechste Schritte: CELM A1-A7 C++ Implementierung.
+- Experiment-DB Node-Isolation Benchmarks (7 DBs x 108 Configs x 3 Reps).
+- ZIH Barnard/Capella fuer Skalierungstests.
 - Bitte um Feedback: Chunking-Heuristiken, Compile-Abgrenzung, Eval-Setup.
 - Q&A.
