@@ -1,0 +1,1133 @@
+% =============================================================================
+% ARCHITEKTUR-ERWEITERUNG fuer doku.tex
+% =============================================================================
+% Einzufuegen zwischen Chapter 4 (Design and Architecture) und Chapter 5 (Evaluation Plan).
+% Neue \cite{}-Eintraege fuer doku.bib am Ende dieser Datei.
+%
+% Dieses Dokument ist in drei Teile gegliedert:
+%   Teil 1 — Zielorientierte Darstellung (Warum/Wie/Was entsteht)
+%   Teil 2 — Technische Modularchitektur (Tabellen, LOC, Baselines)
+%   Teil 3 — Flow-Diagramme, Pipelines und BuildSystem-Rolle
+% =============================================================================
+
+
+% #############################################################################
+%
+% TEIL 1: ZIELORIENTIERTE DARSTELLUNG
+%
+% #############################################################################
+
+
+\chapter{The Comdare Database as Eigentokens Substrate}
+
+The preceding chapters presented Eigentokens as an abstract architecture---a grammar-based storage system that simultaneously serves as a deterministic compiler for language models. This chapter grounds that architecture in the concrete system that implements it: the \textbf{Comdare database platform} (BEP Venture UG), a C++23 codebase of approximately 280{,}000 lines of code. We explain \emph{why} this platform exists, \emph{how} it enables the Eigentokens vision, and \emph{what} emerges when storage infrastructure and grammar-based AI construction converge.
+
+
+\section{Why Build a Custom Database?}
+
+The Eigentokens concept requires capabilities that no existing system provides in combination:
+
+\begin{enumerate}
+\item \textbf{Deterministic arithmetic across platforms.} Every Eigentoken is identified by a SHA-512 hash, and the B$^+$-forest index performs arithmetic on these 512-bit values. Conventional databases rely on platform-native integer types, whose overflow and rounding behavior varies between x86\_64, ARM64, and RISC-V. Eigentokens demand \emph{bit-identical} results on all platforms---a precondition for deterministic model compilation. The Comdare platform addresses this with a custom \textbf{UBigInteger} type that serves as the universal processing element across all database subsystems: filters, fingerprints, deduplication strategies, cluster management, replication, and the object store. Every data operation flows through UBigInteger, ensuring that results are reproducible regardless of hardware.
+
+\item \textbf{Grammar-aware storage boundaries.} Standard content-defined chunking (CDC) treats data as an undifferentiated byte stream. Eigentokens need chunk boundaries that \emph{respect grammar structure}---splitting at syntactically meaningful positions rather than at arbitrary hash-triggered breakpoints. This requires deep integration between the storage engine and the pattern analysis layer, which is impractical to retrofit into existing databases or object stores.
+
+\item \textbf{Unified storage and compilation.} Existing databases optimize for either storage efficiency or query performance, not for compiling AI models from the stored patterns. Eigentokens require the storage system to simultaneously maintain a queryable B$^+$-forest index \emph{and} a ``grammar cookbook'' of production rules that can be translated into neural network weights. This dual purpose demands custom data structures and a processing pipeline that no off-the-shelf database provides.
+
+\item \textbf{Asynchronous, multi-stage analysis.} The $O(n^3)$ grammar induction algorithm is too expensive to run synchronously on every write. The system must accept data at low latency ($<$10\,ms per chunk) while performing deep structural analysis in the background. This requires a purpose-built asynchronous pipeline with careful coordination between immediate storage, background pattern discovery, and index compaction.
+\end{enumerate}
+
+In short: the Eigentokens concept treats the storage system as an AI system in its own right. Building on top of an existing database would force compromises that undermine the core thesis---that storage deduplication and model construction are the \emph{same operation} viewed from different angles.
+
+
+\section{Architectural Means: How the Platform Is Built}
+
+The Comdare platform is organized around a hierarchical module system called the \textbf{Baugruppen Principle} (assembly principle):
+
+\begin{description}
+\item[Bauteile (Components)] are atomic modules with no internal dependencies---individual algorithms or data structures (e.g., a single fingerprint algorithm, a single compression codec). Each lives in its own Git repository.
+\item[Baugruppen (Assemblies)] compose Bauteile into functional subsystems. They are denoted by the \texttt{-all} suffix (e.g., \texttt{comdare-foundation-all}) and define baseline tiers of integrated functionality.
+\item[Produkte (Products)] combine multiple Baugruppen into user-facing applications. \texttt{comdare-db} is the Eigentokens product, consuming 23~Baugruppen.
+\end{description}
+
+The platform provides four foundational capabilities that directly enable the seven Eigentokens components (A1--A7):
+
+\paragraph{Arbitrary-Precision Arithmetic.}
+The foundation layer implements BigInteger multiplication at three complexity levels---schoolbook $O(n^2)$, Karatsuba $O(n^{1.585})$~\cite{Karatsuba1962}, and NTT-based $O(n \log n)$---ensuring that SHA-512 hash arithmetic (comparisons, range queries, frequency counting) scales efficiently. Montgomery modular arithmetic supports the number-theoretic operations needed for grammar rule hashing.
+
+\paragraph{High-Throughput I/O and Concurrency.}
+Linux \texttt{io\_uring}~\cite{Axboe2019} provides zero-copy asynchronous I/O for the three-stage ingestion pipeline (A3). Lock-free data structures, Conflict-free Replicated Data Types (CRDTs)~\cite{Shapiro2011}, and consistent hash rings enable concurrent grammar induction across multiple threads and---eventually---distributed nodes, without sacrificing determinism.
+
+\paragraph{Content-Addressed Storage and Compression.}
+The storage layer provides SHA-512-based content addressing, seekable compression integration (zstd-seekable, BGZF~\cite{Li2011}, LZMA), and HTTP Range support per RFC~9110~\cite{Fielding2022}. These capabilities directly implement the B$^+$-forest (A2) and Storage Interface (A4) components, including token-aligned block maps that enable random access to grammatically-compressed data.
+
+\paragraph{Multi-Platform Build Infrastructure.}
+A custom build system (1{,}921 features, 21 modules) compiles and tests every component on 12 runners spanning x86\_64, ARM64, macOS (Intel and Apple Silicon), Raspberry~Pi, and RISC-V. This multi-platform validation is not merely a convenience---it is the mechanism that \emph{verifies} the determinism guarantee: if the UBigInteger-based processing produces identical results on all six architectures, the Eigentokens compilation is provably platform-independent.
+
+
+\section{What Emerges: The Database as Learning System}
+
+When the Comdare database is combined with the Eigentokens architecture described in \mbox{Chapters 3--4}, a fundamentally new kind of system emerges:
+
+\subsection{Storage That Discovers Knowledge}
+Traditional databases store data passively. The Comdare/Eigentokens system \emph{analyzes} every byte it stores. As data enters through the S3/KV interface (A4), the asynchronous pipeline (A3) performs two operations simultaneously:
+\begin{enumerate}
+\item \textbf{Immediate storage:} Data is chunked, hashed, and written to the B$^+$-forest (A2) with sub-10\,ms latency. The data is immediately accessible.
+\item \textbf{Background learning:} The Grammar Induction Engine (A1) scans the new data against the global corpus, discovering repeated patterns, creating new Eigentokens (production rules), and enriching the grammar cookbook. Over time, the internal representation of the data becomes increasingly compressed and structured.
+\end{enumerate}
+The result is a storage system whose efficiency \emph{improves the more data it processes}---not because of tuning, but because it learns the structure of its contents. The target is 25--40\% better deduplication than FastCDC, achieved through cross-object grammar discovery rather than byte-level hashing.
+
+\subsection{Grammar as a Compilation Blueprint}
+The grammar cookbook accumulated by the storage engine is not merely a compression artifact. Each production rule captures a structural pattern in the data---a piece of ``knowledge'' that can be reused. The Eigentokens system interprets these rules as a blueprint for constructing a \textbf{deterministic language model (ELM)}:
+\begin{itemize}
+\item Production frequencies determine neural network weights (no gradient descent required).
+\item The hierarchical token structure defines the network architecture (no hyperparameter search).
+\item Topic-filtered B$^+$-trees enable \emph{domain-specific} model compilation: a model for code, a model for scientific text, a model for structured data---all from the same storage engine, by selecting different grammar cookbook subsets.
+\end{itemize}
+The compiled model is 100\% deterministic: identical input data always produces an identical model with identical outputs. This eliminates the floating-point nondeterminism that makes conventional LLM training irreproducible, and enables \emph{complete traceability}---every model weight can be traced back to specific source data patterns.
+
+\subsection{Incremental Evolution Instead of Retraining}
+Because the grammar is maintained as a living data structure within the database, new knowledge can be integrated without retraining:
+\begin{itemize}
+\item \textbf{Adding data:} New patterns are discovered and added to the cookbook. Affected model components can be recompiled incrementally.
+\item \textbf{Correcting errors:} A faulty grammar rule can be identified (via the Analysis API, A5), removed or modified, and the model recompiled with the corrected rule. The fix propagates deterministically.
+\item \textbf{Specializing:} An operator can inject domain-specific rules via CELM-lang (Section~3.3) to guide the grammar induction toward patterns relevant to a particular application.
+\end{itemize}
+This stands in sharp contrast to conventional LLMs, where correcting a single factual error typically requires fine-tuning or retraining on corrected data---an expensive, probabilistic process with unpredictable side effects.
+
+\subsection{The Omni-LLM Vision}
+At the highest level of abstraction, the combined system points toward what we call the \textbf{Omni-LLM}: a universal language model that operates by executing stored grammar rules rather than sampling from probability distributions. In this vision:
+\begin{itemize}
+\item The \textbf{storage layer} (Comdare) continuously ingests and analyzes data from all domains.
+\item The \textbf{grammar cookbook} grows into a comprehensive knowledge base spanning code, text, structured data, and multimedia.
+\item \textbf{Model compilation} produces specialized or general-purpose models on demand, each fully deterministic and traceable.
+\item \textbf{CELM-lang} (operating at the M2/M3 metamodel levels) enables the system to analyze and improve its own grammar---a form of \emph{agentic self-improvement} grounded in explicit rules rather than opaque weight updates.
+\end{itemize}
+
+Achieving parity with neural LLMs in open-ended generation remains a distant goal. However, for domains where \emph{reliability, traceability, and determinism} are more valuable than raw fluency---such as legal analysis, medical documentation, financial compliance, and safety-critical systems---the grammar-based approach offers guarantees that probabilistic models fundamentally cannot provide.
+
+
+\section{Current Status and Scale}
+
+The Comdare platform comprises approximately 280{,}000 lines of C++23 code across 250{+} repositories, with a weighted implementation status of 88\%. Nine of the 19 major Baugruppen exceed 90\% completion. The database product (\texttt{comdare-db}) organizes 65 modules into seven baseline tiers totaling 75{,}685 lines of verified source code.
+
+The CELM-specific components (A1--A7) are fully specified at the architectural level---documented in a comprehensive research expose with 43 references, 6 formal research questions, and 13 identified novel contributions---and await C++ implementation using the production infrastructure described above.
+
+Prior validation of the grammar-aware deduplication approach was performed in two production scenarios: a self-hosting experiment on 380{,}000 lines of C++ code (demonstrating cross-object pattern discovery) and an industrial deployment on 1~petabyte of video data (Bosch XC Abstatt, demonstrating petabyte-scale viability). These results establish confidence that the full Eigentokens system---including deterministic model compilation, which the earlier prototype lacked---can operate at the target scale.
+
+
+% #############################################################################
+%
+% TEIL 2: TECHNISCHE MODULARCHITEKTUR (Tabellen, LOC, Baselines)
+%
+% #############################################################################
+
+
+\chapter{Implementation Architecture: Technical Detail}
+This chapter provides a detailed technical inventory of the Comdare platform's module hierarchy, baseline tiers, foundation infrastructure, and build system. It complements the preceding chapter's goal-oriented narrative with concrete metrics and structural mappings.
+
+
+\section{Module Hierarchy: The Baugruppen Principle}
+The implementation follows a strict hierarchical composition model with three levels of abstraction:
+\begin{description}
+\item[Bauteil (Component):] An atomic, self-contained module with no internal dependencies. Examples include the SIMD vectorization library or individual fingerprint algorithm implementations (e.g., \texttt{comdare-fingerprint-sha}, \texttt{comdare-fingerprint-fnv1a}). Each Bauteil resides in its own Git repository and is individually versioned, enabling fine-grained dependency management and independent release cycles.
+\item[Baugruppe (Assembly):] A composition of Bauteile, denoted by the \texttt{-all} suffix (e.g., \texttt{comdare-foundation-all}). Baugruppen define baseline tiers and provide integrated functionality across their constituent components. They serve as the primary dependency units for products. Each Baugruppe maintains its own baseline hierarchy, integration tests, and documentation.
+\item[Produkt (Product):] A user-facing application built atop multiple Baugruppen, providing defined interfaces and deployment artifacts. The database system (\texttt{comdare-db}) is the primary product relevant to Eigentokens, consuming 23 external Baugruppe dependencies.
+\end{description}
+
+This three-tier model ensures that each module can be independently developed, tested, and versioned while maintaining clear dependency boundaries. Placeholder modules serve as procurement notes for planned but not yet implemented functionality, preserving the intended architecture even before code exists.
+
+
+\subsection{Module Dependency Graph}
+
+The composition follows a directed acyclic graph (DAG) structure where higher-tier modules depend on lower-tier modules but never the reverse. The following diagram shows the complete dependency structure:
+
+\begin{verbatim}
+    DEPENDENCY LAYERS (Directed Acyclic Graph, bottom-up)
+    =====================================================
+
+    Layer 0 — Roots (no dependencies)
+    +-----------------+  +--------------+  +--------------+
+    | foundation-all  |  |  config-all  |  | external-all |
+    |  43,726 LOC     |  |  5,014 LOC   |  |  3rd-party   |
+    |  74 features    |  |  35 features |  |  wrappers     |
+    +-----------------+  +--------------+  +--------------+
+            |                   |                  |
+            v                   v                  v
+    Layer 1 — Foundation Dependents
+    +----------------+ +---------------+ +--------------+ +-------------+
+    | encryption-all | | licensing-all | | archiving-all| | storage-all |
+    |  3,638 LOC     | |  7,450 LOC    | |  ~8,000 LOC  | | 42 features |
+    |  86 features   | |  35 features  | |  45 features | | 97% impl    |
+    +----------------+ +---------------+ +--------------+ +-------------+
+            |                  |                |               |
+            v                  v                v               v
+    Layer 2 — Composite Assemblies
+    +---------------------------+  +------------------+  +-------------+
+    | network-protocols-all     |  | filestorage-all  |  | client-all  |
+    |  74,930 LOC               |  |  6,864 LOC       |  | 61 features |
+    |  193 features, 63 modules |  |  17 features     |  | 94% impl    |
+    +---------------------------+  +------------------+  +-------------+
+                  |                        |                    |
+                  +------------------------+--------------------+
+                                           |
+                                           v
+    Product Layer
+    +-----------------------------------------------+
+    |                  comdare-db                    |
+    |  65 modules, 7 baselines, 75,685 LOC          |
+    |  Consumes ALL layers + 23 Baugruppen          |
+    |  = THE EIGENTOKENS SUBSTRATE                  |
+    +-----------------------------------------------+
+\end{verbatim}
+
+Concrete examples illustrate the three-tier composition:
+
+\begin{verbatim}
+    BAUGRUPPEN COMPOSITION EXAMPLE: comdare-foundation-all
+    ======================================================
+
+    Baugruppe (Assembly)              Bauteile (Atomic Components)
+    +----------------------------+    +---------------------------+
+    | comdare-foundation-all     |--->| comdare-simd              |
+    |   "Grundlagenbibliotheken" |    | comdare-biginteger        |
+    |   43,726 LOC               |    | comdare-threading         |
+    |   74 features              |    | comdare-memory            |
+    |   99% implemented          |    | comdare-io                |
+    +----------------------------+    | comdare-serialization     |
+                                      | comdare-logging           |
+                                      | comdare-hash              |
+                                      | comdare-concurrency       |
+                                      | comdare-crdt              |
+                                      | comdare-lru-cache         |
+                                      | comdare-consistent-hash   |
+                                      | ... (30+ Bauteile)        |
+                                      +---------------------------+
+\end{verbatim}
+
+
+\section{Baseline Tier Architecture}
+The \texttt{comdare-db} product organizes its 65 internal modules into seven baseline tiers (B0--B6), each building upon the previous:
+
+\begin{table}[ht]
+\centering
+\caption{comdare-db Baseline Tier Architecture}
+\label{tab:baselines-detail}
+\begin{tabular}{@{}clrrl@{}}
+\toprule
+\textbf{Tier} & \textbf{Domain} & \textbf{Modules} & \textbf{LOC} & \textbf{Key Responsibilities} \\
+\midrule
+B0 & Foundation     & 5  & 8{,}146  & Concurrency, memory management, SIMD, threading \\
+B1 & Primitives     & 2  & 3{,}356  & BigInteger arithmetic, serialization \\
+B2 & Core           & 14 & 25{,}171 & Filter engine, 9 fingerprint algorithms, index management \\
+B3 & DB Blocks      & 36 & 21{,}545 & Cluster, deduplication, replication, 12 compression strategies \\
+B4 & DB Core        & 4  & 15{,}306 & DatabaseCore orchestrator, configuration framework \\
+B5 & Interfaces     & 3  & 1{,}195  & Object storage API, PostgreSQL HA client \\
+B6 & User Interface & 1  & 966      & CLI, Web, Qt, Node.js interface stubs \\
+\midrule
+    & \textbf{Total} & \textbf{65} & \textbf{75{,}685} & \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The B2 tier deserves special attention as it implements the \textbf{filter engine} (33 headers, 21{,}229 LOC)---the largest single module---which provides the pattern-matching infrastructure that the Grammar Induction Engine (A1) builds upon. The nine fingerprint algorithms in B2 (SHA-256, SHA-512, FNV-1a, and six domain-specific variants) enable multi-level content-addressable indexing, where different hash functions serve different roles: SHA-512 for global deduplication keys, FNV-1a for fast similarity detection, and domain-specific hashes for topic-filtered B$^+$-forest trees.
+
+The B3 tier implements 12 compression strategies that the Asynchronous Pipeline (A3) can select dynamically based on data characteristics:
+\begin{itemize}
+\item \textbf{Block-level:} zstd (levels 1--22), LZMA, LZ4, Snappy
+\item \textbf{Seekable:} zstd-seekable with configurable frame sizes, BGZF~\cite{Li2011}
+\item \textbf{Grammar-aware:} Token-aligned compression where boundaries respect Eigentoken structure
+\item \textbf{Domain-specific:} Columnar encoding for tabular data, delta encoding for versioned objects
+\end{itemize}
+
+The following diagram shows how data flows upward through the baseline tiers:
+
+\begin{verbatim}
+    comdare-db BASELINE TIER STACK
+    ==============================
+
+    User Request (S3 PUT / KV Write / SQL INSERT)
+        |
+        v
+    +------------------------------------------------------+
+    | B6: User Interface (966 LOC)                         |
+    |   CLI / Web / Qt / Node.js                           |
+    +------------------------------------------------------+
+        |
+        v
+    +------------------------------------------------------+
+    | B5: Interfaces (1,195 LOC)                           |
+    |   S3-compatible Object Storage API                   |
+    |   PostgreSQL HA Client (Wire Protocol)               |
+    +------------------------------------------------------+
+        |
+        v
+    +------------------------------------------------------+
+    | B4: DB Core (15,306 LOC)                             |
+    |   DatabaseCore Orchestrator                          |
+    |   Configuration Framework (RemoteConfigSource)       |
+    |   Transaction Coordinator                            |
+    +------------------------------------------------------+
+        |
+        v
+    +------------------------------------------------------+
+    | B3: DB Blocks (21,545 LOC, 36 modules)               |
+    |   Deduplication Strategies (7 algorithms)            |
+    |   Compression (12 strategies: zstd/LZMA/LZ4/...)    |
+    |   Cluster Management + Replication                   |
+    |   Erasure Coding + Data Programming                  |
+    +------------------------------------------------------+
+        |
+        v
+    +------------------------------------------------------+
+    | B2: Core (25,171 LOC, 14 modules)                    |
+    |   Filter Engine (33 headers, 21,229 LOC)             |
+    |   9 Fingerprint Algorithms (SHA/FNV/domain-specific) |
+    |   B+-Forest Index Management                         |
+    +------------------------------------------------------+
+        |
+        v
+    +------------------------------------------------------+
+    | B1: Primitives (3,356 LOC)                           |
+    |   UBigInteger (512-bit deterministic arithmetic)     |
+    |   Serialization (cross-platform binary format)       |
+    +------------------------------------------------------+
+        |
+        v
+    +------------------------------------------------------+
+    | B0: Foundation (8,146 LOC)                           |
+    |   SIMD Vectorization | Threading | Memory Mgmt       |
+    |   Platform Abstraction (x86/ARM/RISC-V)             |
+    +------------------------------------------------------+
+\end{verbatim}
+
+
+\section{Foundation Infrastructure}
+The Eigentokens system draws on several major Baugruppen that provide cross-cutting infrastructure. These modules represent the bulk of the system's 280{,}000+ lines of code and are at or near production quality.
+
+\subsection{comdare-foundation-all (43{,}726 LOC, 74 features, 99\% implemented)}
+The absolute foundation layer provides:
+\begin{itemize}
+\item \textbf{BigInteger Arithmetic ($\sim$8{,}000 LOC):} Multiple multiplication algorithms---schoolbook $O(n^2)$, Karatsuba $O(n^{1.585})$~\cite{Karatsuba1962}, and Number Theoretic Transform (NTT)-based $O(n \log n)$ multiplication using a two-prime Chinese Remainder Theorem (CRT) scheme. Montgomery modular arithmetic for efficient modular exponentiation. Miller--Rabin primality testing. Optional GMP interop layer with conditional compilation for environments where GNU Multiple Precision Arithmetic Library is available.
+\item \textbf{Concurrency Primitives ($\sim$6{,}000 LOC):} Lock-free data structures, thread-local algorithm tracing (introspection), consistent hash rings for distributed token placement, five Conflict-free Replicated Data Type (CRDT) implementations~\cite{Shapiro2011} (G-Counter, PN-Counter, G-Set, OR-Set, LWW-Register with StorageState aggregate), and $O(1)$ hash-plus-list LRU cache templates.
+\item \textbf{I/O Scheduling ($\sim$4{,}500 LOC):} Linux \texttt{io\_uring} integration~\cite{Axboe2019} for zero-copy asynchronous I/O, writer-preference single-writer/multiple-reader (SWMR) concurrency, batch I/O operations, and machine-learning-based compression heuristics that select optimal compression strategies at runtime.
+\item \textbf{Platform Abstraction ($\sim$5{,}000 LOC):} Hardware detection for x86\_64, ARM64 (including Apple Silicon), and RISC-V; SIMD vectorization library with compile-time dispatch; memory management with custom allocators; and serialization frameworks for cross-platform data exchange.
+\end{itemize}
+
+The BigInteger library is particularly critical: since all Eigentokens are identified by SHA-512 hashes (512-bit integers), the system requires efficient arbitrary-precision arithmetic for hash comparison, range queries over the B$^+$-forest, and the frequency-based weight calculation used in deterministic model compilation. The NTT-based $O(n \log n)$ multiplier enables these operations to scale to hash spaces that would be impractical with naive algorithms.
+
+\subsection{comdare-network-protocols-all (74{,}930 LOC, 193 features, 95\% implemented)}
+The largest Baugruppe by code volume, organized into seven internal baselines with 63 sub-modules:
+\begin{itemize}
+\item \textbf{Baseline 0 (Foundation, 12 modules):} Threading primitives, IP-layer basics, connection retry/proxy/session management
+\item \textbf{Baseline 1 (Primitives, 8 modules):} Symmetric and asymmetric protocol support, multicast, custom UDP and TCP implementations
+\item \textbf{Baseline 2 (Core, 10 modules):} Latency optimization, throughput balancing, multi-stream coordination
+\item \textbf{Baseline 3 (Streaming, 12 modules):} Tree-based error recovery, frame reassembly for large token transfers
+\item \textbf{Baseline 4 (Interfaces, 15 modules):} Package flow management, auto-balancing, fingerprint-based routing, hardware offloading
+\item \textbf{Baseline 5 (Admin, 4 modules):} Shell, Qt, Web, and binary admin pipe interfaces
+\item \textbf{Baseline 6 (UI, 2 modules):} User-facing protocol dashboards
+\end{itemize}
+
+The admin pipe protocol is notable: it provides an ABI-stable binary plugin system with 45{+} protocol repositories, enabling runtime extension of the storage interface (A4) without recompilation. This mechanism is used by the Analysis API (A5) to expose grammar metrics and by CELM-lang to inject new interpretation program types at runtime.
+
+\subsection{comdare-encryption-all (3{,}638 LOC, 86 features, 94\% implemented)}
+A hierarchical strategy-pattern encryption layer:
+\begin{itemize}
+\item \textbf{Symmetric:} AES-256-GCM, XChaCha20-Poly1305
+\item \textbf{Asymmetric:} RSA-4096, ECDH with curves P-256 and P-384
+\item \textbf{TLS Integration (981 LOC):} Custom TLS infrastructure with certificate pinning (209 LOC) and forward secrecy through ephemeral key generation
+\item \textbf{Combined Strategy (277 LOC):} Decorator and visitor patterns for composing hybrid encryption pipelines
+\end{itemize}
+
+Encryption is relevant to Eigentokens in two ways: (1)~tokens containing sensitive data can be encrypted before storage while preserving the grammar structure (encryption is applied at the payload level, not the token level), and (2)~the secure token transport protocol ensures that grammar rules transmitted between distributed nodes cannot be tampered with.
+
+\subsection{comdare-storage-all (42 features, 97\% implemented)}
+Generic storage abstractions that the database product specializes:
+\begin{itemize}
+\item Content-addressed storage with SHA-512 hashing for Eigentoken identification
+\item Seekable compression integration (BGZF, zstd-seekable, LZMA) with $<$5\% overhead on range reads
+\item HTTP Range support per RFC~9110~\cite{Fielding2022} with token-aligned block maps
+\item Write-ahead logging and periodic snapshots for crash consistency
+\end{itemize}
+
+Together, these four Baugruppen account for over 120{,}000 lines of code and provide the runtime substrate on which grammar induction, B$^+$-forest indexing, and deterministic model compilation operate.
+
+
+% #############################################################################
+%
+% TEIL 3: FLOW-DIAGRAMME, PIPELINES UND BUILDSYSTEM-ROLLE
+%
+% #############################################################################
+
+
+\chapter{System Pipelines and the Role of the Build System}
+
+This chapter presents the dynamic behavior of the Eigentokens/Comdare system through flow diagrams and pipeline descriptions. It also explains the critical role that the custom build system plays in enabling a 280{,}000-line multi-platform C++ codebase to function as a coherent research platform.
+
+
+\section{End-to-End Data Flow: From Ingestion to Model Compilation}
+
+The complete lifecycle of data through the Eigentokens system spans five phases. The following diagram shows the end-to-end flow from data ingestion through grammar discovery to deterministic model compilation:
+
+\begin{verbatim}
+    EIGENTOKENS END-TO-END DATA FLOW
+    =================================
+
+    External Data Sources
+    (files, streams, API uploads)
+         |
+         v
+    +==========================================+
+    |  PHASE 1: INGESTION (S3/KV Interface)    |
+    |  Component A4 — Storage Interface        |
+    |                                          |
+    |  HTTP PUT/POST  --->  Authentication     |
+    |  S3 Multipart   --->  Rate Limiting      |
+    |  KV Write       --->  Request Routing    |
+    +==========================================+
+         |
+         v
+    +==========================================+
+    |  PHASE 2: THREE-STAGE ASYNC PIPELINE     |
+    |  Component A3 — Asynchronous Processing  |
+    |                                          |
+    |  Stage 1: IMMEDIATE (<10ms)              |
+    |    - Content-defined chunking            |
+    |    - SHA-512 hash computation            |
+    |    - Dedup check against B+-forest       |
+    |    - Write to storage (WAL + data)       |
+    |    - Return acknowledgment to client     |
+    |                                          |
+    |  Stage 2: BACKGROUND (seconds-minutes)   |
+    |    - Grammar induction O(n^3)            |
+    |    - Cross-object pattern discovery      |
+    |    - Eigentoken creation/refinement      |
+    |    - Grammar cookbook update              |
+    |    - Frequency statistics maintenance    |
+    |                                          |
+    |  Stage 3: COMPACTION (periodic)          |
+    |    - B+-forest rebalancing               |
+    |    - Token-aligned recompression         |
+    |    - Stale grammar rule garbage collect   |
+    |    - Index optimization                  |
+    +==========================================+
+         |                          |
+         v                          v
+    +==================+    +==================+
+    | PHASE 3: STORAGE |    | PHASE 4: GRAMMAR |
+    | B+-Forest Index  |    | Cookbook          |
+    | (Component A2)   |    | (Component A1)   |
+    |                  |    |                  |
+    | - SHA-512 keys   |    | - Production     |
+    | - Topic filters  |    |   rules          |
+    | - Range queries  |    | - Frequencies    |
+    | - Multi-level    |    | - Hierarchical   |
+    |   fingerprints   |    |   token DAG      |
+    +==================+    +==================+
+              |                      |
+              +----------+-----------+
+                         |
+                         v
+    +==========================================+
+    |  PHASE 5: DETERMINISTIC MODEL COMPILE    |
+    |  Component A6 — ELM Construction         |
+    |                                          |
+    |  Grammar Rules  --->  Network Topology   |
+    |  Frequencies    --->  Weight Values       |
+    |  Token DAG      --->  Layer Structure    |
+    |                                          |
+    |  Result: Deterministic Language Model     |
+    |  (identical input = identical model)     |
+    +==========================================+
+         |
+         v
+    Query / Inference / Export
+\end{verbatim}
+
+
+\section{Grammar Induction Pipeline (Stage 2 Detail)}
+
+The grammar induction process---the intellectual core of the Eigentokens concept---transforms raw byte sequences into structured grammar rules. This is the $O(n^3)$ algorithm that runs asynchronously in Stage~2:
+
+\begin{verbatim}
+    GRAMMAR INDUCTION PIPELINE (Stage 2 Detail)
+    ============================================
+
+    Input: New data chunks from Stage 1
+         |
+         v
+    +------------------------------------------+
+    |  1. SEQUITUR-INSPIRED DIGRAM ANALYSIS    |
+    |                                          |
+    |  Scan all consecutive symbol pairs:      |
+    |    "ABCABC" --> digrams: AB, BC, CA,     |
+    |                          AB, BC          |
+    |  Identify repeated digrams (freq >= 2)   |
+    +------------------------------------------+
+         |
+         v
+    +------------------------------------------+
+    |  2. RULE CREATION                        |
+    |                                          |
+    |  Replace repeated digram with new rule:  |
+    |    R1 -> AB                              |
+    |    "ABCABC" becomes "R1 C R1 C"          |
+    |  Recurse: find digrams in new sequence   |
+    |    R2 -> R1 C                            |
+    |    Result: "R2 R2"                       |
+    +------------------------------------------+
+         |
+         v
+    +------------------------------------------+
+    |  3. CROSS-OBJECT PATTERN MATCHING        |
+    |                                          |
+    |  Compare new rules against existing      |
+    |  grammar cookbook:                        |
+    |    - Exact match: increment frequency    |
+    |    - Partial overlap: create merged rule |
+    |    - Novel pattern: add new rule         |
+    |                                          |
+    |  Uses 9 fingerprint algorithms for       |
+    |  multi-resolution similarity detection   |
+    +------------------------------------------+
+         |
+         v
+    +------------------------------------------+
+    |  4. EIGENTOKEN PROMOTION                 |
+    |                                          |
+    |  Rules exceeding frequency threshold     |
+    |  become Eigentokens:                     |
+    |                                          |
+    |  tau = (id, P, D, R) where:              |
+    |    id = SHA-512(rule content)            |
+    |    P  = interpretation program           |
+    |    D  = data payload                     |
+    |    R  = references to sub-tokens         |
+    |                                          |
+    |  Stored in B+-forest with topic filter   |
+    +------------------------------------------+
+         |
+         v
+    +------------------------------------------+
+    |  5. GRAMMAR COOKBOOK UPDATE               |
+    |                                          |
+    |  +-- Production Rules ------+            |
+    |  | R1 -> "http://"    (f=892)|           |
+    |  | R2 -> R1 "www."   (f=445)|           |
+    |  | R3 -> "<div"      (f=2031)|          |
+    |  | R4 -> R3 " class" (f=967)|           |
+    |  | ...                       |           |
+    |  +---------------------------+           |
+    |                                          |
+    |  Frequencies directly map to neural      |
+    |  network weights in Phase 5              |
+    +------------------------------------------+
+\end{verbatim}
+
+
+\section{CELM-lang Metamodel Architecture}
+
+The CELM-lang specification operates at three metamodel levels, each governing a different aspect of the grammar-based system. This hierarchy enables the system to not only process data but also analyze and improve its own processing rules:
+
+\begin{verbatim}
+    CELM-LANG METAMODEL HIERARCHY
+    ==============================
+
+    +=========================================================+
+    |  M3: META-METAMODEL (Self-Adaptation)                   |
+    |                                                         |
+    |  Defines rules for modifying M2 rules.                  |
+    |  Enables: Agentic self-improvement of the grammar       |
+    |  system. The database can discover that certain M2      |
+    |  strategies are suboptimal and automatically adjust     |
+    |  them based on observed data patterns.                  |
+    |                                                         |
+    |  Example: "If compression ratio drops below threshold,  |
+    |  switch from digram-based to n-gram-based induction"    |
+    +=========================================================+
+         |  governs
+         v
+    +=========================================================+
+    |  M2: METAMODEL (Grammar Application)                    |
+    |                                                         |
+    |  Defines how grammar rules are applied, composed,       |
+    |  and optimized. Controls the behavior of M1.            |
+    |                                                         |
+    |  Components:                                            |
+    |  - Rule composition strategies (merge, split, refine)   |
+    |  - Topic filter configuration                           |
+    |  - Compression/dedup trade-off policies                 |
+    |  - Model compilation parameters                         |
+    |                                                         |
+    |  Example: "For source code, prefer structural rules     |
+    |  over lexical rules; weight AST-aligned patterns 3x"   |
+    +=========================================================+
+         |  governs
+         v
+    +=========================================================+
+    |  M1: MODEL (Grammar Learning)                           |
+    |                                                         |
+    |  The actual grammar rules and Eigentokens discovered    |
+    |  from data. This is the "grammar cookbook."              |
+    |                                                         |
+    |  Contents:                                              |
+    |  - Production rules with frequency counts               |
+    |  - Hierarchical token DAG                               |
+    |  - Topic-filtered B+-tree assignments                   |
+    |  - Cross-reference network between tokens               |
+    |                                                         |
+    |  Example: R47 -> "<html>" (f=12,891, topic=web)        |
+    +=========================================================+
+         |  operates on
+         v
+    +=========================================================+
+    |  DATA LAYER                                             |
+    |                                                         |
+    |  Raw bytes stored in the Comdare database.              |
+    |  Files, streams, API payloads, structured records.      |
+    +=========================================================+
+\end{verbatim}
+
+The key insight is that M2 and M3 are themselves stored as Eigentokens within the database. The system's self-improvement rules are subject to the same deterministic, traceable processing as user data. This means every adaptation decision can be audited: ``the system switched from strategy X to strategy Y because rule R at M3 level triggered, based on metrics M.''
+
+
+\section{Comparative Landscape}
+
+The following table positions the Eigentokens/Comdare approach against existing systems across six critical dimensions. No existing system addresses more than two dimensions simultaneously:
+
+\begin{table}[ht]
+\centering
+\caption{Eigentokens vs.\ Existing Approaches}
+\label{tab:comparative-landscape}
+\begin{tabular}{@{}lcccccc@{}}
+\toprule
+\textbf{System} & \rotatebox{60}{\textbf{Grammar-Aware}} & \rotatebox{60}{\textbf{Deterministic}} & \rotatebox{60}{\textbf{Cross-Object}} & \rotatebox{60}{\textbf{Model Compile}} & \rotatebox{60}{\textbf{Multi-Platform}} & \rotatebox{60}{\textbf{Incremental}} \\
+\midrule
+FastCDC           & ---  & \checkmark & ---        & ---        & \checkmark & ---        \\
+BGZF              & ---  & \checkmark & ---        & ---        & \checkmark & ---        \\
+RocksDB           & ---  & \checkmark & ---        & ---        & partial    & \checkmark \\
+UltiHash          & ---  & partial    & \checkmark & ---        & ---        & \checkmark \\
+DuckDB            & ---  & \checkmark & ---        & ---        & \checkmark & ---        \\
+\textbf{Eigentokens} & \checkmark & \checkmark & \checkmark & \checkmark & \checkmark & \checkmark \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{description}
+\item[Grammar-Aware:] Chunk boundaries respect syntactic structure rather than byte-level hashing.
+\item[Deterministic:] Bit-identical results across all supported hardware platforms.
+\item[Cross-Object:] Pattern discovery spans multiple objects and data domains.
+\item[Model Compile:] Storage patterns can be compiled into neural network weights.
+\item[Multi-Platform:] Verified operation on x86\_64, ARM64, RISC-V, and macOS.
+\item[Incremental:] New data can be integrated without reprocessing the entire corpus.
+\end{description}
+
+
+\section{The Role of the Build System}
+
+\subsection{Why a Custom Build System?}
+
+A 280{,}000-line C++23 codebase distributed across 250{+} Git repositories on six hardware platforms cannot be managed with conventional build tools. The challenges are:
+
+\begin{enumerate}
+\item \textbf{The Chicken-and-Egg Problem.} The build system must compile projects, but the build system \emph{itself} is a C++ project that needs to be compiled. Standard solutions (requiring a pre-installed build system) create a hard dependency on a specific host environment. The Comdare build system solves this with a multi-stage bootstrap:
+
+\begin{verbatim}
+    BUILDSYSTEM BOOTSTRAP (Chicken-and-Egg Resolution)
+    ===================================================
+
+    Stage 0: Bare Environment (only OS + shell)
+         |
+         v
+    +------------------------------------------+
+    |  BOOTSTRAP PHASE                         |
+    |  cd-buildsystem-dependency-manager       |
+    |                                          |
+    |  1. Detect platform (OS, CPU, shell)     |
+    |  2. Download minimal toolchain:          |
+    |     - CMake (if not present)             |
+    |     - Ninja (if not present)             |
+    |     - GCC or Clang (if not present)      |
+    |  3. Compile cd-buildsystem-core          |
+    |  4. Core now compiles remaining modules  |
+    +------------------------------------------+
+         |
+         v
+    Full Build System Available
+    (can now compile any of the 250+ projects)
+\end{verbatim}
+
+\item \textbf{Consistency Across 250{+} Repositories.} Each project must build identically regardless of which developer machine or CI runner compiles it. The build system enforces this through XML-based build declarations (\texttt{buildsystem.xml}) that replace per-project \texttt{CMakeLists.txt} files:
+
+\begin{verbatim}
+    buildsystem.xml DECLARATION (per project)
+    ==========================================
+
+    <buildsystem version="3.0">
+      <project name="comdare-fingerprint-sha">
+        <type>bauteil</type>
+        <language>cpp23</language>
+        <dependencies>
+          <dependency>comdare-foundation-all</dependency>
+        </dependencies>
+        <build>
+          <source-dir>src</source-dir>
+          <include-dir>include</include-dir>
+          <test-dir>tests</test-dir>
+        </build>
+        <dimensions>
+          <d0>standard</d0>    <!-- base configuration -->
+          <d3>zstd,lz4</d3>    <!-- compression backends -->
+          <d7>avx2,neon</d7>   <!-- SIMD targets -->
+        </dimensions>
+      </project>
+    </buildsystem>
+
+    The build system reads this declaration and generates:
+    - CMake configuration (platform-specific)
+    - Dependency resolution (recursive download)
+    - Compiler flags (per-dimension)
+    - Test targets
+    - Artifact packaging
+\end{verbatim}
+
+\item \textbf{Bridge-Pattern Module Delegation.} Each Layer~1 build system module implements its own \texttt{interface.sh} (Linux/macOS), \texttt{interface.bat} (Windows), and \texttt{interface.cmake} (cross-platform) delegation scripts. Build logic resides in the \emph{responsible} module, not in a centralized parser:
+
+\begin{verbatim}
+    BRIDGE PATTERN: BUILD LOGIC DELEGATION
+    =======================================
+
+    cd-buildsystem-core (Orchestrator)
+         |
+         |--- "How do I validate?"
+         |         |
+         |         v
+         |    cd-buildsystem-validation-system/
+         |         interface.sh  (6-phase validation logic)
+         |         interface.cmake
+         |
+         |--- "What compiler to use?"
+         |         |
+         |         v
+         |    cd-buildsystem-compiler-manager/
+         |         interface.sh  (GCC/Clang/MSVC selection)
+         |         interface.cmake
+         |
+         |--- "How do I resolve dependencies?"
+         |         |
+         |         v
+         |    cd-buildsystem-dependency-manager/
+         |         interface.sh  (recursive download + bootstrap)
+         |         interface.cmake
+         |
+         |--- "What build mode?"
+         |         |
+         |         v
+         |    cd-buildsystem-build-mode-system/
+         |         interface.sh  (DEV/DEV_PLUS/PRODUCTION)
+         |         interface.cmake
+         |
+         +--- (9 L1 modules total, each with own interface)
+\end{verbatim}
+
+\item \textbf{Multi-Platform Determinism Verification.} The build system's most critical role for Eigentokens is \emph{proving} that results are platform-independent. It achieves this by compiling and running identical test suites on all target platforms:
+\end{enumerate}
+
+
+\subsection{The Six-Phase Build Pipeline}
+
+Every project passes through a six-phase validation pipeline. Phases~0--3 are mandatory for all builds; phases~4--5 are activated for performance-critical modules:
+
+\begin{verbatim}
+    BUILDSYSTEM SIX-PHASE PIPELINE
+    ===============================
+
+    Phase 0         Phase 1          Phase 2          Phase 3
+    BOOTSTRAP  ---> GROUND TRUTH --> PROJECT BUILD -> TARGET DELIVERY
+       |               |                |                |
+       v               v                v                v
+    Toolchain       Validate         Compile +        Package +
+    acquisition     dependencies,    link project,    distribute
+    (cmake/ninja/   check XML        run unit tests,  artifacts to
+    gcc/clang)      schema,          generate         MinIO S3
+                    verify           coverage         (350 GB cache)
+                    checksums        reports
+
+                                         |
+                                         v (if hardware module)
+                                    Phase 4              Phase 5
+                                    HW ACCELERATION ---> AI OPTIMIZATION
+                                       |                    |
+                                       v                    v
+                                    SIMD dispatch,      ML-guided
+                                    GPU offload,        compiler flag
+                                    platform-specific   selection,
+                                    intrinsics          auto-tuning
+\end{verbatim}
+
+\begin{table}[ht]
+\centering
+\caption{Build System Six-Phase Pipeline Details}
+\label{tab:build-phases}
+\begin{tabular}{@{}clll@{}}
+\toprule
+\textbf{Phase} & \textbf{Name} & \textbf{Purpose} & \textbf{Status} \\
+\midrule
+0 & Bootstrap          & Toolchain acquisition from bare OS         & Active \\
+1 & GroundTruth        & Dependency validation, XML schema check    & Active \\
+2 & ProjectBuild       & Compile, link, unit test, coverage         & Active \\
+3 & TargetDelivery     & Artifact packaging, MinIO upload           & Active \\
+4 & HardwareAcceleration & SIMD dispatch, GPU offload               & Reserved \\
+5 & AIOptimization     & ML-guided flag selection, auto-tuning      & Reserved \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+
+\subsection{Build Modes and Cookbooks}
+
+The build system supports three build modes that control optimization levels, debug symbols, and feature gating. Each mode is defined by a ``cookbook''---a set of compiler flags, preprocessor definitions, and linker options:
+
+\begin{verbatim}
+    BUILD MODES (Cookbook System)
+    ============================
+
+    +-------------------+-------------------------------------------+
+    | DEV               | -O0 -g3 -fsanitize=address,undefined      |
+    |                   | All assertions enabled, verbose logging   |
+    |                   | Used for: Local development, debugging    |
+    +-------------------+-------------------------------------------+
+    | DEV_PLUS          | -O2 -g1 -DNDEBUG=0                       |
+    |                   | Partial optimization, some assertions     |
+    |                   | Used for: CI pipelines, integration tests |
+    +-------------------+-------------------------------------------+
+    | PRODUCTION        | -O3 -march=native -flto -DNDEBUG          |
+    |                   | Full optimization, no assertions          |
+    |                   | Used for: Release builds, benchmarks      |
+    +-------------------+-------------------------------------------+
+
+    Dimension System (D0-D9):
+    D0: Base configuration (always active)
+    D1: Debug level
+    D2: Sanitizer selection
+    D3: Compression backends (zstd, lz4, lzma, snappy)
+    D4: Encryption backends (openssl, boringssl)
+    D5: Network protocol selection
+    D6: Database engine features
+    D7: SIMD targets (SSE4.2, AVX2, NEON, SVE)
+    D8: Platform-specific optimizations
+    D9: Experimental features
+\end{verbatim}
+
+The dimension system (D0--D9) enables combinatorial configuration: a single project can be built with different compression backends, encryption libraries, and SIMD targets by specifying the desired dimensions in \texttt{buildsystem.xml}. This is essential for the multi-platform Eigentokens evaluation, where the same deduplication algorithm must be tested with different hardware acceleration paths.
+
+
+\subsection{How the Build System Serves Eigentokens}
+
+The build system is not merely a development convenience---it is a \emph{scientific instrument} for the Eigentokens research. Its specific contributions to the research goals are:
+
+\begin{enumerate}
+\item \textbf{Determinism Proof (RQ1).} The 12-runner CI/CD architecture compiles and runs every test on six hardware platforms. If the UBigInteger-based grammar induction produces identical results on all platforms, the determinism claim is empirically validated. The build system automates this cross-platform verification on every commit.
+
+\item \textbf{Performance Benchmarking (RQ2, RQ3).} The PRODUCTION build mode with \texttt{-O3 -march=native -flto} ensures that benchmark results reflect optimized code. The artifact system stores benchmark results per platform/architecture/build\_ID in MinIO, enabling systematic comparison across hardware.
+
+\item \textbf{Reproducibility (RQ5).} The XML-based build declaration ensures that any researcher can reproduce the exact build environment. The bootstrap phase downloads specific compiler versions (GCC~14.2, Clang~18.1) rather than relying on system-installed compilers, eliminating ``works on my machine'' problems.
+
+\item \textbf{Scale Management (all RQs).} Managing 250{+} repositories with consistent build configurations would be intractable without the bridge-pattern delegation. The build system enables the research team to focus on algorithm development rather than build infrastructure.
+\end{enumerate}
+
+
+\section{CI/CD Architecture: 12-Runner Multi-Platform Validation}
+
+The continuous integration infrastructure validates every code change across all target platforms. The 12 runners are organized into three tiers of reliability:
+
+\begin{verbatim}
+    CI/CD 12-RUNNER ARCHITECTURE
+    ============================
+
+    TIER 1: MANDATORY (build must pass on all)
+    +---------------------------------------------------+
+    |  Kubernetes Runners (4x Docker containers)        |
+    |                                                   |
+    |  +----------+  +----------+  +----------+  +--+  |
+    |  | Runner 6a|  | Runner 6b|  | Runner 6c|  |6d|  |
+    |  | Talos    |  | Talos    |  | Talos    |  |  |  |
+    |  | Node 1   |  | Node 2   |  | Node 3   |  |N4|  |
+    |  +----------+  +----------+  +----------+  +--+  |
+    |  Tag: docker    Image: gcc:14 / clang:18         |
+    |  OS: Linux      Arch: x86_64 (container)         |
+    +---------------------------------------------------+
+    |  Bare-Metal x86_64 Servers (4x Shell runners)     |
+    |                                                   |
+    |  +-------+  +-------+  +-------+  +-------+     |
+    |  | pve1  |  | pve2  |  | node3 |  | node4 |     |
+    |  |Debian |  |Debian |  |Ubuntu |  |Ubuntu |     |
+    |  |ID: 11 |  |ID: 12 |  |ID: 13 |  |ID: 14 |     |
+    |  +-------+  +-------+  +-------+  +-------+     |
+    |  Tag: shell,x86_64    Native compilers           |
+    +---------------------------------------------------+
+
+    TIER 2: EXOTIC (allow_failure in Phase 1)
+    +---------------------------------------------------+
+    |  +------------+  +-------------+                  |
+    |  | Mac Mini   |  | Mac Mini    |                  |
+    |  | Intel x86  |  | ARM64 M1    |                  |
+    |  | macOS      |  | macOS       |                  |
+    |  | ID: 7      |  | ID: 8       |                  |
+    |  +------------+  +-------------+                  |
+    |  Tag: macos,x86_64  /  macos,arm64               |
+    +---------------------------------------------------+
+    |  +------------+  +-------------+                  |
+    |  | RPi 5      |  | VisionFive 2|                  |
+    |  | ARM64      |  | RISC-V      |                  |
+    |  | Ubuntu     |  | Debian      |                  |
+    |  | ID: 9      |  | ID: 10      |                  |
+    |  +------------+  +-------------+                  |
+    |  Tag: arm64,linux  /  riscv64,linux              |
+    +---------------------------------------------------+
+\end{verbatim}
+
+\begin{table}[ht]
+\centering
+\caption{CI/CD Runner Inventory}
+\label{tab:runners}
+\begin{tabular}{@{}rlllll@{}}
+\toprule
+\textbf{ID} & \textbf{Host} & \textbf{OS} & \textbf{Arch} & \textbf{Type} & \textbf{Tier} \\
+\midrule
+6a--d & K8s Pods   & Linux (container) & x86\_64  & Docker & Mandatory \\
+7     & Mac Mini   & macOS 14          & x86\_64  & Shell  & Exotic \\
+8     & Mac Mini   & macOS 14          & ARM64    & Shell  & Exotic \\
+9     & RPi 5      & Ubuntu 24.04      & ARM64    & Shell  & Exotic \\
+10    & VisionFive & Debian 13         & RISC-V   & Shell  & Exotic \\
+11    & pve1       & Debian 12         & x86\_64  & Shell  & Mandatory \\
+12    & pve2       & Debian 12         & x86\_64  & Shell  & Mandatory \\
+13    & node3      & Ubuntu 24.04      & x86\_64  & Shell  & Mandatory \\
+14    & node4      & Ubuntu 24.04      & x86\_64  & Shell  & Mandatory \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The CI pipeline stages mirror the build system phases:
+
+\begin{verbatim}
+    CI PIPELINE FLOW (GitLab CI Template v3.6)
+    ==========================================
+
+    Push to 'development' branch
+         |
+         v
+    [build]                 GCC 14 + Clang 18 compilation
+         |                  Runs on: K8s Docker + BM x86_64
+         v
+    [test]                  Unit tests + integration tests
+         |                  gcovr coverage (Cobertura XML)
+         v
+    [smoke]                 Quick sanity checks (<2 min)
+         |                  Runs on: ALL 12 runners
+         v
+    [benchmark]             Performance regression tests
+         |                  PRODUCTION mode, -O3 -march=native
+         v
+    [artifacts]             Upload to MinIO S3
+         |                  Path: {project}/{platform}/{arch}/{id}/
+         v
+    [badges]                Pipeline status + coverage badges
+                            Inherited from comdare group level
+\end{verbatim}
+
+Artifact storage follows a structured path convention in MinIO S3:
+
+\begin{verbatim}
+    ARTIFACT STORAGE LAYOUT (MinIO)
+    ================================
+
+    buildsystem-artifacts/              (350 GB bucket)
+    +-- comdare-simd/
+    |   +-- linux/
+    |   |   +-- x86_64/
+    |   |   |   +-- build-1234/
+    |   |   |   |   +-- libcomdare-simd.a
+    |   |   |   |   +-- test-results.xml
+    |   |   |   |   +-- coverage.xml
+    |   |   |   +-- build-1235/
+    |   |   +-- arm64/
+    |   |   +-- riscv64/
+    |   +-- macos/
+    |       +-- x86_64/
+    |       +-- arm64/
+    +-- comdare-biginteger/
+    |   +-- (same structure)
+    +-- comdare-db/
+        +-- (same structure)
+
+    buildsystem-cache/                  (350 GB bucket)
+    +-- dependencies/                   (downloaded toolchains)
+    +-- ccache/                         (compiler cache per runner)
+\end{verbatim}
+
+
+\section{CELM Integration with comdare-db}
+\label{sec:celm-integration-detail}
+The Eigentokens/CELM system connects to the production database platform through well-defined integration points that map the seven architectural components (A1--A7, Section~4.1) to concrete Baugruppen:
+
+\begin{table}[ht]
+\centering
+\caption{Mapping of CELM Components to Comdare Baugruppen}
+\label{tab:celm-mapping}
+\begin{tabular}{@{}lll@{}}
+\toprule
+\textbf{Component} & \textbf{Primary Baugruppe(s)} & \textbf{Key Integration} \\
+\midrule
+A1 Grammar Engine    & foundation-all, comdare-db B2 & BigInt hashing, SIMD pattern matching \\
+A2 B$^+$-Forest      & storage-all, comdare-db B2    & Content-addressed trees, 9 fingerprints \\
+A3 Async Pipeline    & foundation-all                & io\_uring, CRDTs, lock-free queues \\
+A4 Storage Interface & network-protocols-all         & HTTP server, Range semantics \\
+A5 Analysis API      & encryption-all, licensing-all & Secure transport, access control \\
+A6 Mock Rules        & comdare-db B3                 & 12 compression strategies \\
+A7 Replication       & comdare-db B3 (planned)       & Cluster, erasure coding \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The following diagram shows how the CELM components (A1--A7) are layered on top of the Baugruppen infrastructure:
+
+\begin{verbatim}
+    CELM / BAUGRUPPEN INTEGRATION MAP
+    ===================================
+
+    CELM Layer (Research — to be implemented)
+    +-------+--------+--------+--------+--------+--------+--------+
+    |  A1   |   A2   |   A3   |   A4   |   A5   |   A6   |   A7   |
+    |Grammar| B+-    | Async  |Storage |Analysis| Mock   |Replic- |
+    |Engine | Forest |Pipeline|Interfce| API    | Rules  | ation  |
+    +---+---+---+----+---+----+---+----+---+----+---+----+---+----+
+        |       |        |        |        |        |        |
+        v       v        v        v        v        v        v
+    Baugruppen Layer (Production — 88% implemented)
+    +----------+----------+----------+----------+----------+
+    |foundation|  storage | network- |encryption| licensing|
+    |   -all   |   -all   | protocols|   -all   |   -all   |
+    | 43.7K LOC| 42 feat  |   -all   | 3.6K LOC| 7.5K LOC|
+    |  99%     |  97%     | 74.9K LOC|  94%     |  94%     |
+    |          |          |  95%     |          |          |
+    +----------+----------+----------+----------+----------+
+        |           |          |           |          |
+        v           v          v           v          v
+    comdare-db Product (7 Baselines, 75,685 LOC, 55% implemented)
+    +-----------------------------------------------------------+
+    | B0:Foundation | B1:Primitives | B2:Core | B3:DB Blocks    |
+    | B4:DB Core    | B5:Interfaces | B6:UI                     |
+    +-----------------------------------------------------------+
+\end{verbatim}
+
+This layered integration ensures that the Eigentokens research prototype benefits from production-grade infrastructure while maintaining a clean separation between the research-specific grammar induction logic and the general-purpose database platform. The Comdare ecosystem provides:
+\begin{itemize}
+\item 9 fingerprint algorithms for multi-level content-addressable indexing
+\item 12 compression strategies with grammar-aware token alignment
+\item Multi-platform hardware support (x86\_64, ARM64, RISC-V, Apple Silicon)
+\item A mature concurrency framework with CRDTs for distributed state
+\item An ABI-stable plugin system for runtime grammar rule extension
+\item Production-scale validation: 380{,}000 LOC self-hosting and 1~PB industrial deployment
+\end{itemize}
+
+
+\section{Research Questions and Novel Contributions}
+
+The Eigentokens project addresses six formal research questions, each supported by specific infrastructure from the Comdare platform:
+
+\begin{table}[ht]
+\centering
+\caption{Research Questions and Supporting Infrastructure}
+\label{tab:research-questions}
+\begin{tabular}{@{}cp{5cm}p{5cm}@{}}
+\toprule
+\textbf{RQ} & \textbf{Question} & \textbf{Comdare Support} \\
+\midrule
+1 & How effectively can grammar-based deduplication outperform byte-level CDC? & 7 dedup algorithms in B3, 9 fingerprints in B2, FastCDC baseline comparison \\
+2 & Can the B$^+$-forest maintain efficient indexing at scale? & B$^+$-tree implementation in B2, SHA-512 UBigInteger keys, topic-filtered partitioning \\
+3 & Does the 3-stage async pipeline achieve $<$10ms write latency? & io\_uring in foundation-all, CRDTs for consistency, lock-free queues \\
+4 & Are deterministically compiled models functionally equivalent to trained models? & UBigInteger platform-identical arithmetic, 12-runner cross-platform verification \\
+5 & Does the approach generalize across data domains? & 12 compression strategies, dimension system D0--D9, configurable grammar policies via CELM-lang \\
+6 & Can the agentic M3 layer improve system performance autonomously? & Plugin system via admin pipe, runtime rule injection, M3 metamodel in CELM-lang \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The project identifies 13 novel contributions organized into three categories:
+
+\begin{description}
+\item[Theoretical (C1--C4):] Unified framework linking deduplication and model construction (C1), inverse learning from storage patterns to network weights (C2), deterministic weight derivation without gradient descent (C3), CELM-lang as a three-level metamodel for grammar-based AI (C4).
+
+\item[Systems (C5--C8):] B$^+$-forest as a non-strict, topic-filtered index structure (C5), token-aligned compression preserving grammar boundaries (C6), three-stage asynchronous pipeline with sub-10ms write latency (C7), agentic storage that self-optimizes via M3 rules (C8).
+
+\item[Empirical (C9--C13):] Cross-domain benchmarking methodology (C9), open-source reference implementation (C10), production validation at petabyte scale (C11), multi-platform determinism verification across 6 architectures (C12), quantitative comparison against state-of-the-art dedup systems (C13).
+\end{description}
+
+
+\section{Implementation Status and Metrics}
+Table~\ref{tab:impl-status-detail} summarizes the current implementation status of the major Baugruppen relevant to Eigentokens.
+
+\begin{table}[ht]
+\centering
+\caption{Implementation Status of Major Baugruppen (as of February 2026)}
+\label{tab:impl-status-detail}
+\begin{tabular}{@{}lrrr@{}}
+\toprule
+\textbf{Baugruppe} & \textbf{Features} & \textbf{Approx.\ LOC} & \textbf{Impl.\ \%} \\
+\midrule
+comdare-foundation-all     & 74    & 43{,}726  & 99\% \\
+comdare-network-protocols  & 193   & 74{,}930  & 95\% \\
+comdare-encryption-all     & 86    & 3{,}638   & 94\% \\
+comdare-storage-all        & 42    & ---       & 97\% \\
+comdare-filestorage-all    & 17    & 6{,}864   & 97\% \\
+comdare-config-all         & 35    & 5{,}014   & 100\% \\
+comdare-client-all         & 61    & ---       & 94\% \\
+comdare-licensing-all      & 35    & 7{,}450   & 94\% \\
+cd-buildsystem-construct   & 1{,}921 & 94{,}400 & 92\% \\
+comdare-db (product)       & 27    & 75{,}685  & 55\% \\
+\midrule
+\textbf{System Total}      & \textbf{2{,}723} & \textbf{$\sim$280{,}000} & \textbf{88\%} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Nine of the 19 Baugruppen exceed 90\% implementation; the four modules at 0\% (binary-analytics, treecore, wrappers, lightweight) represent planned extensions that do not block the current Eigentokens evaluation.
+
+The CELM-specific components (A1--A7) are fully specified at the architectural level and documented in an 885-line research expose with 43 references, 6 formal research questions, and 13 identified novel contributions. The C++ implementation of these components awaits execution; the research evaluation will use the production infrastructure detailed above as the execution substrate.
+
+
+% =============================================================================
+% NEUE BIBLIOGRAFIE-EINTRAEGE (in doku.bib einfuegen)
+% =============================================================================
+%
+% @article{Karatsuba1962,
+%   author  = {Anatolii Alexeevitch Karatsuba and Yuri Ofman},
+%   title   = {Multiplication of Many-Digital Numbers by Automatic Computers},
+%   journal = {Proceedings of the USSR Academy of Sciences},
+%   volume  = {145},
+%   pages   = {293--294},
+%   year    = {1962},
+%   note    = {Translation in Soviet Physics Doklady, 7:595--596, 1963}
+% }
+%
+% @inproceedings{Shapiro2011,
+%   author    = {Marc Shapiro and Nuno Pregui{\c{c}}a and Carlos Baquero and Marek Zawirski},
+%   title     = {Conflict-free Replicated Data Types},
+%   booktitle = {Proceedings of the 13th International Symposium on Stabilization, Safety, and Security of Distributed Systems (SSS 2011)},
+%   year      = {2011},
+%   publisher = {Springer},
+%   series    = {LNCS},
+%   volume    = {6976},
+%   pages     = {386--400}
+% }
+%
+% @inproceedings{Axboe2019,
+%   author    = {Jens Axboe},
+%   title     = {Efficient IO with io\_uring},
+%   booktitle = {Linux Kernel Documentation},
+%   year      = {2019},
+%   note      = {\url{https://kernel.dk/io_uring.pdf}}
+% }
+%
+% =============================================================================
