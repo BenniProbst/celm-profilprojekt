@@ -335,22 +335,22 @@
 
 \ifx\@empty\@isreport
   \if@final
-    \LoadClass[cleardoublepage=empty, listof=totoc, bibliography=totoc, index=totoc, 11pt, abstracton, numbers=noenddot, twoside,titlepage,headings=normal]{scrartcl}%
+    \LoadClass[cleardoublepage=empty, listof=totoc, bibliography=totoc, index=totoc, 11pt, abstract=true,version=last, numbers=noenddot, twoside,titlepage,headings=normal]{scrartcl}%
   \else
     \if@twoside
-      \LoadClass[cleardoublepage=empty, listof=totoc, bibliography=totoc, index=totoc, 11pt, abstracton, numbers=noenddot, twoside,titlepage,headings=normal]{scrartcl}%
+      \LoadClass[cleardoublepage=empty, listof=totoc, bibliography=totoc, index=totoc, 11pt, abstract=true,version=last, numbers=noenddot, twoside,titlepage,headings=normal]{scrartcl}%
     \else
-      \LoadClass[cleardoublepage=empty, listof=totoc, bibliography=totoc, index=totoc, 11pt, abstracton, numbers=noenddot, oneside,titlepage,headings=normal]{scrartcl}%
+      \LoadClass[cleardoublepage=empty, listof=totoc, bibliography=totoc, index=totoc, 11pt, abstract=true,version=last, numbers=noenddot, oneside,titlepage,headings=normal]{scrartcl}%
     \fi
   \fi
 \else
   \if@final
-    \LoadClass[cleardoublepage=empty, listof=totoc, bibliography=totoc, index=totoc, 11pt, abstracton, numbers=noenddot, twoside,titlepage,openright,headings=normal]{scrreprt}%
+    \LoadClass[cleardoublepage=empty, listof=totoc, bibliography=totoc, index=totoc, 11pt, abstract=true,version=last, numbers=noenddot, twoside,titlepage,openright,headings=normal]{scrreprt}%
   \else
     \if@twoside
-      \LoadClass[cleardoublepage=empty, listof=totoc, bibliography=totoc, index=totoc, 11pt, abstracton, numbers=noenddot, twoside,titlepage,openright,headings=normal]{scrreprt}%
+      \LoadClass[cleardoublepage=empty, listof=totoc, bibliography=totoc, index=totoc, 11pt, abstract=true,version=last, numbers=noenddot, twoside,titlepage,openright,headings=normal]{scrreprt}%
     \else
-      \LoadClass[cleardoublepage=empty, listof=totoc, bibliography=totoc, index=totoc, 11pt, abstracton, numbers=noenddot, oneside,titlepage,openright,headings=normal]{scrreprt}%
+      \LoadClass[cleardoublepage=empty, listof=totoc, bibliography=totoc, index=totoc, 11pt, abstract=true,version=last, numbers=noenddot, oneside,titlepage,openright,headings=normal]{scrreprt}%
     \fi
   \fi
 \fi
